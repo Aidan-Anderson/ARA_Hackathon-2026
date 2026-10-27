@@ -9,6 +9,7 @@ describe('App skeleton', () => {
     for (const region of ['Toolbar', 'Plan view', 'Loads', 'Results', 'Detail', 'Code calc', 'Warnings']) {
       expect(html).toContain(region)
     }
-    expect(html).toContain('Roof: 4-point outline, 5 Shear Lines')
+    // The plan shows T1's Shear Lines (B1.1).
+    for (const name of ['1', '2', '3', 'A', 'B']) expect(html).toContain(`<title>Shear Line ${name}</title>`)
   })
 })

@@ -10,6 +10,7 @@ import { LoadForm } from './ui/panels/LoadForm'
 import { ResultsPanel } from './ui/panels/ResultsPanel'
 import { SeismicCodePanel } from './ui/panels/SeismicCodePanel'
 import { Warnings } from './ui/panels/Warnings'
+import { initialEditorState, type EditorState } from './ui/plan/editor'
 import { PlanView } from './ui/plan/PlanView'
 import { Toolbar } from './ui/plan/Toolbar'
 import './App.css'
@@ -25,6 +26,8 @@ export default function App() {
   const [selection, setSelection] = useState<Selection>(null)
   const [showAsd, setShowAsd] = useState(false)
   const [tab, setTab] = useState<Tab>('Results')
+  // Track B's plan editor (mode, tool); only Toolbar and PlanView use it.
+  const [editor, setEditor] = useState<EditorState>(initialEditorState)
   const results = useMemo(() => analyze(project), [project])
 
   const view: AppViewProps = {
@@ -44,10 +47,10 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-toolbar">
-        <Toolbar {...view} />
+        <Toolbar {...view} editor={editor} setEditor={setEditor} />
       </header>
       <main className="app-plan">
-        <PlanView {...view} />
+        <PlanView {...view} editor={editor} setEditor={setEditor} />
       </main>
       <aside className="app-side">
         <nav className="tabs">

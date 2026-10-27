@@ -1,0 +1,120 @@
+.plan {
+  position: absolute;
+  inset: 0;
+}
+
+.plan-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.plan-svg.is-panning {
+  cursor: grabbing;
+}
+
+.gridline {
+  stroke: #8c959f;
+  stroke-width: 1;
+  stroke-dasharray: 14 4 3 4;
+}
+
+.gridline-bubble {
+  fill: #ffffff;
+  stroke: #6e7781;
+}
+
+.gridline-name {
+  fill: #1f2328;
+  font-size: 12px;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.outline {
+  fill: rgb(84 174 255 / 0.15);
+  stroke: #0969da;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.shear-line {
+  stroke: #bc4c00;
+  stroke-width: 2;
+  stroke-dasharray: 8 5;
+}
+
+.shear-line.is-off {
+  stroke: #cf222e;
+}
+
+.lateral-element {
+  stroke: #953800;
+  stroke-width: 6;
+}
+
+.shear-line-name {
+  fill: #bc4c00;
+  font-size: 12px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.gridline-target {
+  cursor: pointer;
+}
+
+.gridline-target-hit {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: all;
+}
+
+.gridline-target-hover {
+  visibility: hidden;
+  fill: none;
+  stroke: #0969da;
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.gridline-target:hover .gridline-target-hover {
+  visibility: visible;
+}
+
+.plan-fit {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.plan-fit:hover {
+  background: #f3f4f6;
+}
+
+.plan-hint {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 0.5rem;
+  margin: 0;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.85);
+  color: #656d76;
+  font-size: 0.8125rem;
+  pointer-events: none;
+}

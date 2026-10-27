@@ -1,6 +1,6 @@
 # Problem — Hackathon 2026
 
-> **Status:** GRILLED. Design decisions are settled, ready for spec and tickets.
+> **Status:** READY TO BUILD. Spec and tickets are written; start with ticket P0.1.
 > Items marked _(assumed)_ were not covered in grilling.
 > **Time box:** 11:00 AM – 4:00 PM (5 hours). Everything below has to fit in that.
 > **Team:** Hamid (Track A: calc engine + results), Aidan (Track B: plan editor)
@@ -11,8 +11,8 @@ This file is where the team agrees on what we're building. Pipeline:
 
 1. ~~**Research**~~: done, see [the research notes](docs/research/asce7-flexible-diaphragm-lateral-demands.md).
 2. ~~**Grill**~~: done. The answers are in section 8; vocabulary is in [GLOSSARY.md](GLOSSARY.md).
-3. **Spec**: turn this file into a spec (what we build plus acceptance criteria).
-4. **Tickets**: split the spec into small tickets, one track and one phase each.
+3. ~~**Spec**~~: done, see [docs/spec.md](docs/spec.md).
+4. ~~**Tickets**~~: done, see [docs/tickets/](docs/tickets/README.md).
 5. **Implement**: build one vertical-slice phase at a time (see *Build phases* in section 5). Every phase ends with an app we can demo.
 
 **Rules:**

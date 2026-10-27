@@ -30,6 +30,10 @@ A reference line on the plan: numbered gridlines (1, 2, 3…) run vertically, le
 **Underlay**:
 An imported plan image or PDF page, scaled to real dimensions and shown behind a Level so the user can trace over it.
 
+**Overhang**:
+The part of a Diaphragm beyond the outermost Shear Line in a direction, acting as a cantilever from that line.
+_Avoid_: cantilever diaphragm
+
 **Opening**:
 A rectangular hole in a Diaphragm, such as a stair or shaft.
 _Avoid_: penetration, void

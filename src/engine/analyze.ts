@@ -6,6 +6,7 @@ import {
   type LineResult,
   type LoadCaseId,
   type Results,
+  type Warning,
 } from '../model/results'
 import { elementDemands, lineCollector } from './collectors'
 import {
@@ -20,6 +21,11 @@ import {
 import { envelope } from './envelope'
 import { levelForces, type LevelForces } from './forces'
 import { continuation, fromAbove, NOTHING_FROM_ABOVE, transferResult, type FromAbove } from './levels'
+import {
+  IRREGULARITY_COLLECTOR_FACTOR,
+  irregularityApplies,
+  reentrantIrregularity,
+} from './seismicCode'
 import { cutAt, extentOf, levelSections, reentrantVertices } from './sections'
 import { levelWarnings, transferWarnings } from './validate'
 import type { BeamLoads } from './beam'
@@ -47,7 +53,47 @@ export function analyze(project: Project): Results {
       levels: analyzeStack(project, loadCase.direction, forces, windPlf, invalid),
     }
   }
+  warnings.push(...applyReentrantIrregularity(project, cases, invalid))
   return { cases, envelope: envelope(cases), warnings }
+}
+
+/**
+ * §12.3.3.4 (spec §5.14): in SDC D–F, a Level with a re-entrant corner irregularity gets its seismic
+ * Collector and transfer Collector Demands increased by 25%.
+ */
+function applyReentrantIrregularity(
+  project: Project,
+  cases: Record<LoadCaseId, CaseResult>,
+  invalid: Set<string | undefined>,
+): Warning[] {
+  const sdc = project.loads.seismicCode?.sdc
+  if (!irregularityApplies(sdc)) return []
+  const factor = IRREGULARITY_COLLECTOR_FACTOR
+  const amplify = (collector: { force: { s: number[]; v: number[] }; maxForce: number }) => ({
+    force: { s: collector.force.s, v: collector.force.v.map((v) => v * factor) },
+    maxForce: collector.maxForce * factor,
+  })
+
+  const warnings: Warning[] = []
+  project.levels.forEach((level, i) => {
+    if (invalid.has(level.id) || !reentrantIrregularity(level.outline)) return
+    for (const caseId of SEISMIC_CASES) {
+      const result = cases[caseId].levels[i]
+      result.lines = result.lines.map((line) => ({ ...line, collector: amplify(line.collector) }))
+      result.transfersIn = result.transfersIn.map((t) => ({
+        ...t,
+        collectorPlf: t.collectorPlf * factor,
+        collector: amplify(t.collector),
+      }))
+    }
+    warnings.push({
+      severity: 'warning',
+      code: 'reentrant-irregularity',
+      levelId: level.id,
+      message: `${level.name}: re-entrant corner irregularity (ASCE 7 §12.3.3.4, SDC ${sdc}), so seismic Collector Demands are increased by 25%.`,
+    })
+  })
+  return warnings
 }
 
 /**

@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { analyze } from './engine/analyze'
 import { createDefaultProject } from './model/defaults'
 import type { Project } from './model/project'
-import type { AppViewProps, CaseView, Selection } from './model/ui'
+import { DEFAULT_EDITOR, type AppViewProps, type CaseView, type EditorState, type Selection } from './model/ui'
 import { ProjectFileMenu } from './ui/io/ProjectFileMenu'
 import { loadAutosave } from './ui/io/saveLoad'
 import { useAutosave } from './ui/io/useAutosave'
@@ -27,6 +27,7 @@ export default function App() {
   const [caseId, setCaseId] = useState<CaseView>('SY')
   const [selection, setSelection] = useState<Selection>(null)
   const [showAsd, setShowAsd] = useState(false)
+  const [editor, setEditor] = useState<EditorState>(DEFAULT_EDITOR)
   const [tab, setTab] = useState<Tab>('Results')
   const results = useMemo(() => analyze(project), [project])
   const autosaveNotice = useAutosave(project)
@@ -50,6 +51,8 @@ export default function App() {
     setShowAsd,
     selection,
     setSelection: select,
+    editor,
+    setEditor,
   }
 
   return (

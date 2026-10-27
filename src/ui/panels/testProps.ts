@@ -2,7 +2,7 @@
 
 import { analyze } from '../../engine/analyze'
 import type { Project } from '../../model/project'
-import type { AppViewProps, CaseView, Selection } from '../../model/ui'
+import { DEFAULT_EDITOR, type AppViewProps, type CaseView, type Selection } from '../../model/ui'
 
 export function viewProps(
   project: Project,
@@ -23,6 +23,8 @@ export function viewProps(
     setShowAsd: noop,
     selection,
     setSelection: noop,
+    editor: DEFAULT_EDITOR,
+    setEditor: noop,
   }
 }
 

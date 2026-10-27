@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { applyStoryForces, DEFAULT_SEISMIC_CODE, elf, usgsLookup } from '../../engine/seismicCode'
 import type { Project, SeismicCodeInputs } from '../../model/project'
 import type { AppViewProps } from '../../model/ui'
+import { NumberField, SelectField } from './fields'
 import './ResultsPanel.css'
 
 const RISK_CATEGORIES: SeismicCodeInputs['riskCategory'][] = ['I', 'II', 'III', 'IV']
@@ -162,62 +163,5 @@ export function SeismicCodePanel({ project, setProject }: AppViewProps) {
         </>
       )}
     </div>
-  )
-}
-
-/**
- * A number input that lets the user type freely ("0.", "-") and commits each valid number.
- * While focused it shows the typed text; otherwise it shows the project's value.
- */
-function NumberField({
-  label,
-  value,
-  onCommit,
-}: {
-  label: string
-  value: number | undefined
-  onCommit: (value: number | undefined) => void
-}) {
-  const [draft, setDraft] = useState<string | null>(null)
-  return (
-    <label>
-      <span>{label}</span>
-      <input
-        inputMode="decimal"
-        value={draft ?? (value === undefined ? '' : String(value))}
-        onChange={(event) => {
-          const text = event.target.value
-          setDraft(text)
-          if (text.trim() === '') onCommit(undefined)
-          else if (Number.isFinite(Number(text))) onCommit(Number(text))
-        }}
-        onBlur={() => setDraft(null)}
-      />
-    </label>
-  )
-}
-
-function SelectField({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string
-  value: string
-  options: readonly string[]
-  onChange: (value: string) => void
-}) {
-  return (
-    <label>
-      <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {option === '' ? '—' : option}
-          </option>
-        ))}
-      </select>
-    </label>
   )
 }

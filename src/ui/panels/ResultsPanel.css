@@ -84,6 +84,15 @@
   color: #656d76;
 }
 
+.form-grid label.wide {
+  grid-column: 1 / -1;
+}
+
+.form-grid input.invalid {
+  border-color: #cf222e;
+  background: #ffebe9;
+}
+
 .form-grid input,
 .form-grid select {
   width: 100%;

@@ -5,6 +5,9 @@ import { analyze } from './engine/analyze'
 import { createDefaultProject } from './model/defaults'
 import type { Project } from './model/project'
 import type { AppViewProps, CaseView, Selection } from './model/ui'
+import { ProjectFileMenu } from './ui/io/ProjectFileMenu'
+import { loadAutosave } from './ui/io/saveLoad'
+import { useAutosave } from './ui/io/useAutosave'
 import { DetailPanel } from './ui/panels/DetailPanel'
 import { LoadForm } from './ui/panels/LoadForm'
 import { ResultsPanel } from './ui/panels/ResultsPanel'
@@ -19,8 +22,8 @@ const TABS = ['Loads', 'Results', 'Detail', 'Code calc'] as const
 type Tab = (typeof TABS)[number]
 
 export default function App() {
-  // B4.2 starts from the autosave when there is one (spec §6.6).
-  const [project, setProject] = useState<Project>(createDefaultProject)
+  // Start from the autosave when there is one (spec §6.6).
+  const [project, setProject] = useState<Project>(() => loadAutosave() ?? createDefaultProject())
   const [levelId, setLevelId] = useState(() => project.levels[project.levels.length - 1].id)
   const [caseId, setCaseId] = useState<CaseView>('SY')
   const [selection, setSelection] = useState<Selection>(null)
@@ -29,6 +32,7 @@ export default function App() {
   // Track B's plan editor (mode, tool); only Toolbar and PlanView use it.
   const [editor, setEditor] = useState<EditorState>(initialEditorState)
   const results = useMemo(() => analyze(project), [project])
+  const autosaveNotice = useAutosave(project)
 
   // Selecting an element (a Results row, or the plan) opens its details.
   const select: AppViewProps['setSelection'] = (next) => {
@@ -55,6 +59,8 @@ export default function App() {
     <div className="app">
       <header className="app-toolbar">
         <Toolbar {...view} editor={editor} setEditor={setEditor} />
+        <Toolbar {...view} />
+        <ProjectFileMenu {...view} />
       </header>
       <main className="app-plan">
         <PlanView {...view} editor={editor} setEditor={setEditor} />
@@ -75,6 +81,7 @@ export default function App() {
         </div>
       </aside>
       <footer className="app-warnings">
+        {autosaveNotice && <div className="autosave-notice">{autosaveNotice}</div>}
         <Warnings {...view} />
       </footer>
     </div>

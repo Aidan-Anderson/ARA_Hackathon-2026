@@ -30,6 +30,7 @@ import {
   snapPoint,
   type SnapContext,
 } from './snap'
+import { ResultsLayer } from './ResultsLayer'
 import { useElementSize } from './useElementSize'
 import { boundsOf, fitViewport, toPlan, zoomAt, type Bounds, type Viewport } from './viewport'
 import './PlanView.css'
@@ -86,14 +87,26 @@ function hint(editor: EditorState, drafting: boolean): string {
   return ''
 }
 
-export function PlanView({ project, setProject, levelId, editor, selection, setSelection }: AppViewProps) {
+export function PlanView({
+  project,
+  setProject,
+  results,
+  levelId,
+  caseId,
+  showAsd,
+  editor,
+  selection,
+  setSelection,
+}: AppViewProps) {
   const level = currentLevel(project, levelId)
   const lines = gridlines(project.grid)
   const bounds = planBounds(project, level)
   const [container, measured] = useElementSize<HTMLDivElement>()
   const size = measured ?? DEFAULT_SIZE
   const [userViewport, setUserViewport] = useState<Viewport | null>(null)
-  const v = userViewport ?? fitViewport(bounds, size.width, size.height)
+  // Leave room beside the plan for the span diagrams when they're showing.
+  const padding = editor.layers.diagrams && caseId !== 'ENV' ? 150 : 56
+  const v = userViewport ?? fitViewport(bounds, size.width, size.height, padding)
   const [hover, setHover] = useState<Point | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [rect, setRect] = useState<{ a: Point; b: Point } | null>(null)
@@ -285,6 +298,16 @@ export function PlanView({ project, setProject, levelId, editor, selection, setS
         <OutlineLayer level={level} v={v} />
         <OpeningLayer level={level} v={v} selection={selection} />
         <ShearLineLayer level={level} v={v} bounds={bounds} selection={selection} />
+        <ResultsLayer
+          project={project}
+          level={level}
+          results={results}
+          caseId={caseId}
+          showAsd={showAsd}
+          layers={editor.layers}
+          v={v}
+          bounds={bounds}
+        />
         {rect && <RectPreview a={rect.a} b={rect.b} v={v} />}
         {newElement && (
           <ElementPreview

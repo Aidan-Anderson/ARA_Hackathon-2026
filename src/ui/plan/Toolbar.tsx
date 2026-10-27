@@ -2,8 +2,25 @@
 // (B2.1), Load Case picker and Strength/ASD (B3.2), and the Level picker (B4.1).
 
 import type { Axis, LateralElement } from '../../model/project'
-import type { AppViewProps, EditorMode, EditorTool } from '../../model/ui'
+import { LOAD_CASES } from '../../model/results'
+import type { AppViewProps, CaseView, EditorMode, EditorState, EditorTool } from '../../model/ui'
 import './Toolbar.css'
+
+const CASES: { id: CaseView; label: string; title: string }[] = [
+  ...LOAD_CASES.map(({ id, label }) => ({ id, label: id, title: label })),
+  { id: 'ENV', label: 'ENV', title: 'Envelope' },
+]
+
+const VALUE_LEVELS: { id: 'strength' | 'asd'; label: string }[] = [
+  { id: 'strength', label: 'Strength' },
+  { id: 'asd', label: 'ASD' },
+]
+
+const LAYERS: { id: keyof Omit<EditorState['layers'], 'ghost'>; label: string }[] = [
+  { id: 'labels', label: 'Labels' },
+  { id: 'collectors', label: 'Collectors' },
+  { id: 'diagrams', label: 'Diagrams' },
+]
 
 const MODES: { id: EditorMode; label: string }[] = [
   { id: 'grid', label: 'Grid' },
@@ -33,7 +50,7 @@ const DIRECTIONS: { id: Axis; label: string }[] = [
 /** Modes that work so far; the rest show as disabled. */
 const READY_MODES: EditorMode[] = ['grid', 'draw']
 
-export function Toolbar({ editor, setEditor }: AppViewProps) {
+export function Toolbar({ editor, setEditor, caseId, setCaseId, showAsd, setShowAsd }: AppViewProps) {
   return (
     <div className="toolbar">
       <Segmented
@@ -59,6 +76,28 @@ export function Toolbar({ editor, setEditor }: AppViewProps) {
           onChange={(elementKind) => setEditor((e) => ({ ...e, elementKind }))}
         />
       )}
+      <Segmented label="Case" options={CASES} value={caseId} onChange={setCaseId} />
+      <Segmented
+        label="Values"
+        options={VALUE_LEVELS}
+        value={showAsd ? 'asd' : 'strength'}
+        onChange={(level) => setShowAsd(level === 'asd')}
+      />
+      <div className="layer-toggles" role="group" aria-label="Show">
+        <span className="segmented-label">Show</span>
+        {LAYERS.map((layer) => (
+          <label key={layer.id}>
+            <input
+              type="checkbox"
+              checked={editor.layers[layer.id]}
+              onChange={(event) =>
+                setEditor((e) => ({ ...e, layers: { ...e.layers, [layer.id]: event.target.checked } }))
+              }
+            />
+            {layer.label}
+          </label>
+        ))}
+      </div>
     </div>
   )
 }
@@ -70,7 +109,7 @@ export function Segmented<T extends string>({
   onChange,
 }: {
   label: string
-  options: { id: T; label: string; disabled?: boolean }[]
+  options: { id: T; label: string; title?: string; disabled?: boolean }[]
   value: T
   onChange: (value: T) => void
 }) {
@@ -80,6 +119,7 @@ export function Segmented<T extends string>({
       {options.map((option) => (
         <button
           key={option.id}
+          title={option.title}
           className={option.id === value ? 'active' : undefined}
           disabled={option.disabled}
           aria-pressed={option.id === value}

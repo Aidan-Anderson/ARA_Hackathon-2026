@@ -11,6 +11,10 @@
 
 .app-toolbar {
   grid-area: toolbar;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid #d0d7de;
 }

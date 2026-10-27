@@ -2,7 +2,8 @@
 
 import type { Axis, Level, ShearLine } from '../model/project'
 import type { CornerResult, SpanResult } from '../model/results'
-import { cantilever, maxAbs, simpleBeam, type Beam, type BeamLoads } from './beam'
+import { cantilever, simpleBeam, type Beam, type BeamLoads } from './beam'
+import { maxAbs } from './math'
 import { depthAt, type DepthPiece, type ReentrantVertex, type Sections } from './sections'
 
 /** Shorter than this, an Overhang is just drawing noise. */
@@ -29,6 +30,22 @@ export function shearLinesIn(level: Level, direction: Axis): ShearLine[] {
 /** Uniform load q (ksf) over the net Diaphragm: w(s) = q · net depth(s). */
 export function areaLoad(net: DepthPiece[], q: number): BeamLoads {
   return { uniform: net.map((piece) => ({ from: piece.from, to: piece.to, w: q * piece.depth })), points: [] }
+}
+
+/** Uniform line load w (kips/ft) wherever the Diaphragm exists: wind (spec §5.3). */
+export function lineLoad(gross: DepthPiece[], w: number): BeamLoads {
+  return {
+    uniform: gross.filter((piece) => piece.depth > 0).map((piece) => ({ from: piece.from, to: piece.to, w })),
+    points: [],
+  }
+}
+
+/** Total of all loads (kips). */
+export function totalLoad(loads: BeamLoads): number {
+  return (
+    loads.uniform.reduce((sum, load) => sum + load.w * (load.to - load.from), 0) +
+    loads.points.reduce((sum, load) => sum + load.p, 0)
+  )
 }
 
 /** Overhang lengths beyond the first and last line (0 if none). */

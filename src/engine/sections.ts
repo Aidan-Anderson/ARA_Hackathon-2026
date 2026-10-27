@@ -3,6 +3,7 @@
 
 import { crossSection } from '../model/geometry'
 import type { Axis, Level, Opening, Point } from '../model/project'
+import { EPS, uniqueSorted } from './math'
 
 /** A stretch of the span axis where the depth is constant. */
 export interface DepthPiece {
@@ -28,31 +29,50 @@ export interface ReentrantVertex {
   narrowDepth: number
 }
 
-const EPS = 1e-9
+/** The Diaphragm along one cut: its cross-section and the parts of it outside Openings. */
+export interface Cut {
+  section: [number, number]
+  net: [number, number][]
+}
 
 export function levelSections(level: Level, direction: Axis): Sections {
   const across = acrossOf(direction)
-  const openingAcross = (o: Opening): [number, number] => (direction === 'Y' ? [o.xMin, o.xMax] : [o.yMin, o.yMax])
-  const openingAlong = (o: Opening): [number, number] => (direction === 'Y' ? [o.yMin, o.yMax] : [o.xMin, o.xMax])
-
-  const breaks = uniqueSorted([...level.outline.map(across), ...level.openings.flatMap(openingAcross)])
+  const breaks = uniqueSorted([
+    ...level.outline.map(across),
+    ...level.openings.flatMap((o) => openingAcross(o, direction)),
+  ])
   const gross: DepthPiece[] = []
   const net: DepthPiece[] = []
   for (let i = 0; i + 1 < breaks.length; i++) {
     const from = breaks[i]
     const to = breaks[i + 1]
-    const mid = (from + to) / 2
-    const section = crossSection(level.outline, direction, mid)
-    if (!section) continue
-    const [lo, hi] = section
-    const holes = level.openings
-      .filter((o) => openingAcross(o)[0] < mid && mid < openingAcross(o)[1])
-      .map((o) => openingAlong(o))
-    gross.push({ from, to, depth: hi - lo })
-    net.push({ from, to, depth: hi - lo - coveredLength(holes, lo, hi) })
+    const cut = cutAt(level, direction, (from + to) / 2)
+    if (!cut) continue
+    gross.push({ from, to, depth: cut.section[1] - cut.section[0] })
+    net.push({ from, to, depth: totalLength(cut.net) })
   }
   const netArea = net.reduce((sum, piece) => sum + piece.depth * (piece.to - piece.from), 0)
   return { gross, net, netArea }
+}
+
+/**
+ * The cut at s along the load direction, which is also where a Shear Line at position s runs.
+ * Openings count only where s passes strictly through them. null if s misses the Diaphragm.
+ */
+export function cutAt(level: Level, direction: Axis, s: number): Cut | null {
+  const section = crossSection(level.outline, direction, s)
+  if (!section) return null
+  const holes = level.openings
+    .filter((o) => {
+      const [a, b] = openingAcross(o, direction)
+      return a < s && s < b
+    })
+    .map((o) => openingAlong(o, direction))
+  return { section, net: subtractIntervals(section, holes) }
+}
+
+export function totalLength(intervals: [number, number][]): number {
+  return intervals.reduce((sum, [a, b]) => sum + (b - a), 0)
 }
 
 /** The Diaphragm's extent along the span axis. */
@@ -95,23 +115,26 @@ function acrossOf(direction: Axis): (p: Point) => number {
   return direction === 'Y' ? (p) => p.x : (p) => p.y
 }
 
-/** Length of [lo, hi] covered by the union of the intervals. */
-function coveredLength(intervals: [number, number][], lo: number, hi: number): number {
-  const clipped = intervals
-    .map(([a, b]): [number, number] => [Math.max(a, lo), Math.min(b, hi)])
-    .filter(([a, b]) => b > a)
-    .sort((p, q) => p[0] - q[0])
-  let covered = 0
-  let reach = lo
-  for (const [a, b] of clipped) {
-    if (b <= reach) continue
-    covered += b - Math.max(a, reach)
-    reach = b
-  }
-  return covered
+/** An Opening's extent along the span axis. */
+function openingAcross(o: Opening, direction: Axis): [number, number] {
+  return direction === 'Y' ? [o.xMin, o.xMax] : [o.yMin, o.yMax]
 }
 
-function uniqueSorted(values: number[]): number[] {
-  const sorted = [...values].sort((a, b) => a - b)
-  return sorted.filter((value, i) => i === 0 || value - sorted[i - 1] > EPS)
+/** An Opening's extent along the load direction (across the depth). */
+function openingAlong(o: Opening, direction: Axis): [number, number] {
+  return direction === 'Y' ? [o.yMin, o.yMax] : [o.xMin, o.xMax]
+}
+
+/** [lo, hi] minus the union of the holes, as sorted intervals. */
+function subtractIntervals([lo, hi]: [number, number], holes: [number, number][]): [number, number][] {
+  const sorted = [...holes].sort((p, q) => p[0] - q[0])
+  const pieces: [number, number][] = []
+  let reach = lo
+  for (const [a, b] of sorted) {
+    if (a > reach) pieces.push([reach, Math.min(a, hi)])
+    reach = Math.max(reach, b)
+    if (reach >= hi) break
+  }
+  if (reach < hi) pieces.push([reach, hi])
+  return pieces.filter(([a, b]) => b - a > EPS)
 }

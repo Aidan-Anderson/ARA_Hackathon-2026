@@ -1,0 +1,38 @@
+.warnings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.warnings ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.warning {
+  padding: 0.125rem 0.5rem;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+}
+
+.warning.is-error {
+  border-color: #ffcecb;
+  background: #ffebe9;
+  color: #82071e;
+}
+
+.warning.is-warning {
+  border-color: #f2d58a;
+  background: #fff8c5;
+  color: #7d4e00;
+}
+
+.warnings-quiet {
+  color: #656d76;
+}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { t1, t2, t3, t4, t6, t6b, t7 } from '../model/fixtures'
+import { rect } from '../model/fixtures/build'
+import { t1, t1b, t1w, t2, t3, t4, t5, t6, t6b, t7 } from '../model/fixtures'
 import type { Project } from '../model/project'
 import type { LoadCaseId } from '../model/results'
 import { analyze } from './analyze'
@@ -84,10 +85,65 @@ describe('analyze: Diaphragm Reactions at F_x level (A1.1)', () => {
     }
   })
 
-  it('leaves wind cases at zero until A3.2', () => {
-    const level = analyze(t1()).cases.WY.levels[0]
-    expect(level.fx).toBe(0)
-    expect(level.lines).toEqual([])
+})
+
+describe('analyze: wind, Load Cases, Envelope, ASD (A3.2)', () => {
+  it('T1w WY: 300 plf over 100 ft gives 30 k, reactions 6.0 / 15.0 / 9.0, no F_px', () => {
+    const level = analyze(t1w()).cases.WY.levels[0]
+    expect(level.fx).toBeCloseTo(30, 6)
+    expect(level.weight).toBe(0)
+    expect(level.fpx).toBeUndefined()
+    const lines = linesByName(t1w(), 'WY')
+    for (const [name, reaction] of [['1', 6.0], ['2', 15.0], ['3', 9.0]] as const) {
+      expect(lines[name].reactionFx).toBeCloseTo(reaction, 6)
+      expect(lines[name].reactionFpx).toBeCloseTo(reaction, 6) // one run for wind
+      expect(lines[name].storyShear).toBeCloseTo(reaction, 6)
+    }
+    expect(lines['2'].elements[0].force).toBeCloseTo(15.0, 6)
+  })
+
+  it('T1: wind 0 gives all-zero WX and WY results', () => {
+    const results = analyze(t1())
+    for (const caseId of ['WX', 'WY'] as const) {
+      const level = results.cases[caseId].levels[0]
+      expect(level.fx).toBe(0)
+      expect(level.lines.length).toBeGreaterThan(0)
+      for (const line of level.lines) {
+        expect(line.reactionFx).toBe(0)
+        expect(line.storyShear).toBe(0)
+        expect(line.collector.maxForce).toBe(0)
+      }
+      for (const span of level.spans) expect(span.maxChord).toBe(0)
+    }
+  })
+
+  it('ASD factors: 0.7 seismic, 0.6 wind; T1 span 2→3 Chord at ASD is 1.966 k', () => {
+    const results = analyze(t1())
+    expect(results.cases.SY.asdFactor).toBe(0.7)
+    expect(results.cases.WY.asdFactor).toBe(0.6)
+    const span = spansByName(t1(), 'SY')['2→3']
+    expect(span.maxChord * results.cases.SY.asdFactor).toBeCloseTo(1.9656, 6)
+  })
+
+  it('T1w Envelope, line 2 wall: strength 15.0 k from WY, but ASD 9.1 k from SY', () => {
+    const entry = analyze(t1w()).envelope.find((e) => e.kind === 'lateralElement' && e.refId === 'roof-2-e1')!
+    expect(entry.quantity).toBe('force')
+    expect(entry.strength.value).toBeCloseTo(15.0, 6)
+    expect(entry.strength.caseId).toBe('WY')
+    expect(entry.asd.value).toBeCloseTo(9.1, 6)
+    expect(entry.asd.caseId).toBe('SY')
+  })
+
+  it('T1 Envelope covers every element, line, Collector, and span, with the ASD Chord 1.966 k', () => {
+    const entries = analyze(t1()).envelope
+    const count = (kind: string) => entries.filter((e) => e.kind === kind).length
+    expect(count('lateralElement')).toBe(5) // one wall on each of 1, 2, 3, A, B
+    expect(count('line')).toBe(5)
+    expect(count('collector')).toBe(5)
+    expect(count('span')).toBe(2 * 3) // 1→2, 2→3, A→B; unit shear and Chord each
+    const chord = entries.find((e) => e.kind === 'span' && e.refId === 'roof-2→roof-3' && e.quantity === 'chord')!
+    expect(chord.asd.value).toBeCloseTo(1.9656, 6)
+    expect(chord.asd.caseId).toBe('SY')
   })
 })
 
@@ -268,6 +324,175 @@ describe('analyze: L/T shapes, Re-entrant Corners, Openings, Overhangs (A2.2)', 
   it('T1 and T2 raise no warnings', () => {
     expect(analyze(t1()).warnings).toEqual([])
     expect(analyze(t2()).warnings).toEqual([])
+  })
+})
+
+describe('analyze: Lateral Elements and Collectors (A3.1)', () => {
+  it('T1: each line’s story shear goes to its Lateral Elements by length', () => {
+    const lines = linesByName(t1(), 'SY')
+    const only = (name: string) => {
+      expect(lines[name].elements).toHaveLength(1)
+      return lines[name].elements[0]
+    }
+    expect(only('1').force).toBeCloseTo(5.2, 6)
+    expect(only('1').unitShear).toBeCloseTo(104, 6)
+    expect(only('2').force).toBeCloseTo(13.0, 6)
+    expect(only('2').unitShear).toBeCloseTo(650, 6)
+    expect(only('3').force).toBeCloseTo(7.8, 6)
+    expect(only('3').unitShear).toBeCloseTo(156, 6)
+  })
+
+  it('splits by length when a line has two Lateral Elements', () => {
+    const project = t1()
+    const line2 = project.levels[0].shearLines.find((line) => line.name === '2')!
+    line2.lateralElements = [
+      { id: 'w-a', kind: 'shearWall', start: 0, end: 10 },
+      { id: 'w-b', kind: 'bracedFrame', start: 35, end: 50 },
+    ]
+    const [a, b] = linesByName(project, 'SY')['2'].elements
+    expect(a.force).toBeCloseTo(13.0 * (10 / 25), 6)
+    expect(b.force).toBeCloseTo(13.0 * (15 / 25), 6)
+    expect(a.unitShear).toBeCloseTo(520, 6)
+    expect(b.unitShear).toBeCloseTo(520, 6)
+  })
+
+  it('T1: line 2’s Collector peaks at 9.36 k at the wall end; full-length walls need none', () => {
+    const lines = linesByName(t1(), 'SY')
+    expect(lines['2'].collector.maxForce).toBeCloseTo(9.36, 6)
+    const { s, v } = lines['2'].collector.force
+    expect(Math.abs(v[s.indexOf(20)])).toBeCloseTo(9.36, 6)
+    expect(lines['1'].collector.maxForce).toBeCloseTo(0, 6)
+    expect(lines['3'].collector.maxForce).toBeCloseTo(0, 6)
+  })
+
+  it('T1b: a centered wall halves the Collector force to 4.68 k', () => {
+    expect(linesByName(t1b(), 'SY')['2'].collector.maxForce).toBeCloseTo(4.68, 6)
+  })
+
+  it('every Collector in T1–T4 and T7 closes to zero at the far end (equilibrium)', () => {
+    for (const project of [t1(), t1b(), t2(), t3(), t4(), t7()]) {
+      const results = analyze(project)
+      for (const caseId of ['SX', 'SY'] as const) {
+        for (const level of results.cases[caseId].levels) {
+          for (const line of level.lines) {
+            const { s, v } = line.collector.force
+            expect(s.length).toBeGreaterThan(1)
+            expect(v[0]).toBe(0)
+            expect(v[v.length - 1]).toBeCloseTo(0, 6)
+            for (let i = 1; i < s.length; i++) expect(s[i] - s[i - 1]).toBeLessThanOrEqual(1 + 1e-9)
+          }
+        }
+      }
+    }
+  })
+
+  it('no Diaphragm shear comes in across an Opening on the line', () => {
+    const project = t1()
+    project.levels[0].openings = [{ id: 'stair', xMin: 35, xMax: 45, yMin: 25, yMax: 35 }] // straddles line 2
+    const { s, v } = linesByName(project, 'SY')['2'].collector.force
+    // Wall [0, 20], Opening [25, 35]: nothing goes in or out across the Opening, so F is flat there.
+    expect(v[s.indexOf(25)]).toBeCloseTo(v[s.indexOf(35)], 9)
+    expect(v[v.length - 1]).toBeCloseTo(0, 6)
+  })
+
+  it('warns about a Lateral Element past the end of its line, and clips it', () => {
+    const project = t1()
+    const line2 = project.levels[0].shearLines.find((line) => line.name === '2')!
+    line2.lateralElements[0].end = 60 // the line is 50 ft long
+    const results = analyze(project)
+    expect(results.warnings).toEqual([expect.objectContaining({ code: 'element-off-line', refId: 'roof-2-e1' })])
+    expect(linesByName(project, 'SY')['2'].elements[0].unitShear).toBeCloseTo(260, 6) // 13.0 k over 50 ft
+  })
+
+  it('warns about a Shear Line with no Lateral Elements, and draws no Collector for it', () => {
+    const project = t1()
+    project.levels[0].shearLines.find((line) => line.name === '2')!.lateralElements = []
+    const results = analyze(project)
+    expect(results.warnings).toEqual([expect.objectContaining({ code: 'line-without-elements', refId: 'roof-2' })])
+    expect(linesByName(project, 'SY')['2'].collector.maxForce).toBe(0)
+  })
+})
+
+describe('analyze: story shear and Transfer Forces down the building (A4.1)', () => {
+  it('T2: story shear accumulates down stacked lines: Roof 6/15/9, Level 2 12/30/18', () => {
+    const project = t2()
+    const roof = linesByName(project, 'SY', 1)
+    const level2 = linesByName(project, 'SY', 0)
+    for (const [name, top, bottom] of [['1', 6, 12], ['2', 15, 30], ['3', 9, 18]] as const) {
+      expect(roof[name].storyShear).toBeCloseTo(top, 6)
+      expect(level2[name].storyShear).toBeCloseTo(bottom, 6)
+      expect(roof[name].continuesBelow).toBe(true)
+      expect(level2[name].continuesBelow).toBe(true) // bottom Level: to the foundation
+    }
+    // Lateral Elements carry the story shear, not just their own Level's reaction.
+    expect(level2['2'].elements[0].force).toBeCloseTo(30, 6)
+    expect(level2['2'].elements[0].unitShear).toBeCloseTo(1500, 6)
+  })
+
+  it('T5: the Roof’s line 2 stops, every other line continues', () => {
+    const roof = linesByName(t5(), 'SY', 1)
+    expect(roof['2'].continuesBelow).toBe(false)
+    expect(roof['1'].continuesBelow).toBe(true)
+    expect(roof['3'].continuesBelow).toBe(true)
+  })
+
+  it('T5: line 2 transfers 15.0 k into Level 2 at x = 40, with a 300 plf transfer Collector peaking at 9.0 k', () => {
+    const level2 = analyze(t5()).cases.SY.levels[0]
+    expect(level2.transfersIn).toHaveLength(1)
+    const transfer = level2.transfersIn[0]
+    expect(transfer.fromLevelId).toBe('roof')
+    expect(transfer.fromLineId).toBe('roof-2')
+    expect(transfer.position).toBe(40)
+    expect(transfer.force).toBeCloseTo(15.0, 6)
+    expect(transfer.collectorPlf).toBeCloseTo(300, 6)
+    expect(transfer.collector.maxForce).toBeCloseTo(9.0, 6)
+    const { v } = transfer.collector.force
+    expect(v[v.length - 1]).toBeCloseTo(0, 6) // the Collector closes
+  })
+
+  it('T5 Level 2: reactions 24/21, story shear 30/30, F_px reactions 35/32, M 984 and Chord 19.68 at x = 40', () => {
+    const project = t5()
+    const lines = linesByName(project, 'SY', 0)
+    expect(lines['1'].reactionFx).toBeCloseTo(24.0, 6)
+    expect(lines['3'].reactionFx).toBeCloseTo(21.0, 6)
+    expect(lines['1'].storyShear).toBeCloseTo(30.0, 6)
+    expect(lines['3'].storyShear).toBeCloseTo(30.0, 6)
+    expect(lines['1'].reactionFpx).toBeCloseTo(35.0, 6)
+    expect(lines['3'].reactionFpx).toBeCloseTo(32.0, 6)
+    const span = spansByName(project, 'SY', 0)['1→3']
+    expect(span.maxMoment).toBeCloseTo(984, 6)
+    expect(span.maxChord).toBeCloseTo(19.68, 6)
+  })
+
+  it('T5: the ground-story lines carry the whole building’s F_x (60 k)', () => {
+    const level2 = analyze(t5()).cases.SY.levels[0]
+    expect(level2.lines.reduce((sum, line) => sum + line.storyShear, 0)).toBeCloseTo(60, 6)
+  })
+
+  it('T5: the transfer Collector is in the Envelope', () => {
+    const entry = analyze(t5()).envelope.find((e) => e.kind === 'transferCollector')!
+    expect(entry.refId).toBe('roof:roof-2')
+    expect(entry.strength.value).toBeCloseTo(9.0, 6)
+  })
+
+  it('a line that stops beyond the Diaphragm below: transfer-outside, and no transfer', () => {
+    const project = t5()
+    const level2 = project.levels[0]
+    level2.outline = rect(30, 50) // Level 2 is only 30 ft wide
+    level2.shearLines.find((line) => line.name === '3')!.position = 30
+    for (const line of level2.shearLines.filter((l) => l.direction === 'X')) line.lateralElements[0].end = 30
+    const results = analyze(project)
+    const outside = results.warnings.filter((w) => w.code === 'transfer-outside')
+    expect(outside.map((w) => w.refId).sort()).toEqual(['roof-2', 'roof-3'])
+    expect(outside.every((w) => w.severity === 'error' && w.levelId === 'roof')).toBe(true)
+    expect(results.cases.SY.levels[0].transfersIn).toEqual([])
+  })
+
+  it('wind flows down the same way (T2 with 200 plf in Y)', () => {
+    const project = t2()
+    project.loads.windPlf.Y = 200 // 20 k per Level
+    const level2 = linesByName(project, 'WY', 0)
+    expect(level2['2'].storyShear).toBeCloseTo(2 * 0.5 * 20, 6) // line 2 takes half of each Level's 20 k
   })
 })
 

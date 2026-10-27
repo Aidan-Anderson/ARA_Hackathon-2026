@@ -281,3 +281,11 @@
   stroke: #bf3989;
   stroke-width: 2.5;
 }
+
+/* Drag handles on the selected item */
+.handle {
+  fill: #ffffff;
+  stroke: #0969da;
+  stroke-width: 2;
+  cursor: ew-resize;
+}

@@ -132,3 +132,35 @@ export function moveShearLine(
 export function setUnderlay(project: Project, levelId: string, underlay: Underlay | undefined): Project {
   return updateLevel(project, levelId, ({ underlay: _old, ...level }) => (underlay ? { ...level, underlay } : level))
 }
+
+/**
+ * Move one end of a Lateral Element along its line (B3.1 follow-up). The end is clamped to the
+ * line's extent and kept at least MIN_ELEMENT_FT from the other end.
+ */
+export function resizeElement(
+  project: Project,
+  levelId: string,
+  lineId: string,
+  elementId: string,
+  end: 'start' | 'end',
+  value: number,
+  lineExtent: [number, number],
+): Project {
+  return updateLevel(project, levelId, (level) => ({
+    ...level,
+    shearLines: level.shearLines.map((line) =>
+      line.id !== lineId
+        ? line
+        : {
+            ...line,
+            lateralElements: line.lateralElements.map((element) => {
+              if (element.id !== elementId) return element
+              const [lo, hi] = lineExtent
+              return end === 'start'
+                ? { ...element, start: Math.min(Math.max(value, lo), element.end - MIN_ELEMENT_FT) }
+                : { ...element, end: Math.max(Math.min(value, hi), element.start + MIN_ELEMENT_FT) }
+            }),
+          },
+    ),
+  }))
+}

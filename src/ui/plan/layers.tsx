@@ -241,3 +241,15 @@ export function CalibrationLayer({ points, hover, v }: { points: Point[]; hover:
     </g>
   )
 }
+
+/** Square drag handles at the ends of the selected item. */
+export function Handles({ points, v }: { points: Point[]; v: Viewport }) {
+  return (
+    <g className="handles">
+      {points.map((p, i) => {
+        const s = toScreen(v, p)
+        return <rect key={i} className="handle" x={s.x - 5} y={s.y - 5} width={10} height={10} />
+      })}
+    </g>
+  )
+}

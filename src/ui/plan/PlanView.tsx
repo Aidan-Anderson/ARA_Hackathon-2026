@@ -8,7 +8,18 @@ import type { Level, Point, Project, Underlay } from '../../model/project'
 import { currentLevel, type AppViewProps, type EditorState, type Selection } from '../../model/ui'
 import { calibrateUnderlay, insideUnderlay, moveUnderlay, underlayBounds } from '../io/underlay'
 import { sameSelection } from '../panels/selection'
-import { addElement, addOpening, addShearLine, moveShearLine, removeItem, setOutline, setUnderlay } from './edit'
+import {
+  addElement,
+  addOpening,
+  addShearLine,
+  moveShearLine,
+  removeItem,
+  resizeElement,
+  setOutline,
+  setUnderlay,
+} from './edit'
+import { alongLine, lineExtent } from './lineGeometry'
+import { findElement } from './resultsGeometry'
 import { GhostLayer } from './GhostLayer'
 import { gridlines, nearestGridline, type Gridline } from './grid'
 import { hitTest, type Hit } from './hitTest'
@@ -22,6 +33,7 @@ import {
   OutlineLayer,
   PlanDefs,
   RectPreview,
+  Handles,
   ShearLineLayer,
   UnderlayLayer,
 } from './layers'
@@ -48,7 +60,7 @@ const CLICK_SLOP_PX = 4
 const SNAP_PX = 10
 
 type Drag = {
-  kind: 'pan' | 'click' | 'rect' | 'element' | 'moveLine' | 'underlay'
+  kind: 'pan' | 'click' | 'rect' | 'element' | 'moveLine' | 'underlay' | 'resize'
   x: number
   y: number
   start: Viewport
@@ -63,7 +75,13 @@ type Drag = {
   hit?: Hit
   /** The Underlay as it was when a drag to align it started. */
   underlay?: Underlay
+  /** The Lateral Element being resized, and which end. */
+  elementId?: string
+  end?: 'start' | 'end'
 }
+
+/** A drag handle at one end of the selected Lateral Element. */
+type Handle = { point: Point; lineId: string; elementId: string; end: 'start' | 'end' }
 
 /** An outline being drawn, tied to the Level it was started on. */
 type Draft = { levelId: string; points: Point[] }
@@ -74,7 +92,8 @@ function toSelection(hit: Hit, levelId: string): Selection {
     : { kind: hit.kind, levelId, id: hit.id }
 }
 
-function hint(editor: EditorState, drafting: boolean, level: Level, calibrationPoints: number): string {
+function hint(editor: EditorState, drafting: boolean, level: Level, calibrationPoints: number, resizing: boolean): string {
+  if (editor.tool === 'select' && resizing) return 'Drag a square handle to change the length of the selected wall or frame.'
   if (editor.tool === 'select') {
     return level.underlay && !editor.underlayLocked
       ? 'Drag the drawing to align it, then tick Lock. Click to select; drag a Shear Line to move it.'
@@ -130,6 +149,18 @@ export function PlanView({
   const [draft, setDraft] = useState<Draft | null>(null)
   const [rect, setRect] = useState<{ a: Point; b: Point } | null>(null)
   const [newElement, setNewElement] = useState<{ lineId: string; a: number; b: number } | null>(null)
+
+  // Handles at both ends of the selected Lateral Element; dragging one resizes it.
+  const selectedElement =
+    selection?.kind === 'lateralElement' && selection.levelId === level.id ? findElement(level, selection.id) : null
+  const handles: Handle[] = selectedElement
+    ? (['start', 'end'] as const).map((end) => ({
+        point: alongLine(selectedElement.line, selectedElement.element[end]),
+        lineId: selectedElement.line.id,
+        elementId: selectedElement.element.id,
+        end,
+      }))
+    : []
   const [calibration, setCalibration] = useState<{ levelId: string; points: Point[] }>({ levelId: '', points: [] })
   const calibrationPoints = editor.tool === 'calibrate' && calibration.levelId === level.id ? calibration.points : []
   const drag = useRef<Drag | null>(null)
@@ -198,8 +229,14 @@ export function PlanView({
     const base = { ...p, start: v, moved: false }
     const under = event.button === 0 && (editor.tool === 'select' || editor.tool === 'element') ? lineUnder(at) : null
     const line = under && level.shearLines.find((l) => l.id === under.lineId)
+    const handle =
+      event.button === 0 && editor.tool === 'select'
+        ? handles.find((h) => Math.hypot(h.point.x - at.x, h.point.y - at.y) <= tolerance)
+        : undefined
 
-    if (event.button === 0 && editor.tool === 'opening') {
+    if (handle) {
+      drag.current = { kind: 'resize', ...base, lineId: handle.lineId, elementId: handle.elementId, end: handle.end }
+    } else if (event.button === 0 && editor.tool === 'opening') {
       const anchor = snapPoint(at, snap)
       drag.current = { kind: 'rect', ...base, anchor }
       setRect({ a: anchor, b: anchor })
@@ -233,6 +270,11 @@ export function PlanView({
     if (!d) return
     if (Math.hypot(p.x - d.x, p.y - d.y) > CLICK_SLOP_PX) d.moved = true
     const line = d.lineId ? level.shearLines.find((l) => l.id === d.lineId) : undefined
+    if (d.kind === 'resize' && line && d.elementId && d.end) {
+      const value = snapAlong(line.direction, at, snap)
+      const extent = lineExtent(level, line, bounds)
+      setProject((p) => resizeElement(p, level.id, line.id, d.elementId!, d.end!, value, extent))
+    }
     if (d.kind === 'pan' && d.moved) setUserViewport({ ...d.start, ox: d.start.ox + p.x - d.x, oy: d.start.oy + p.y - d.y })
     if (d.kind === 'rect' && d.anchor) setRect({ a: d.anchor, b: snapPoint(at, snap) })
     if (d.kind === 'element' && line && d.along !== undefined) {
@@ -261,6 +303,7 @@ export function PlanView({
       setProject((p) => addOpening(p, level.id, d.anchor!, corner))
       return
     }
+    if (d.kind === 'resize') return
     if (d.kind === 'element') {
       const line = level.shearLines.find((l) => l.id === d.lineId)
       setNewElement(null)
@@ -357,6 +400,7 @@ export function PlanView({
         />
         {rect && <RectPreview a={rect.a} b={rect.b} v={v} />}
         {editor.tool === 'calibrate' && <CalibrationLayer points={calibrationPoints} hover={hover} v={v} />}
+        {editor.tool === 'select' && <Handles points={handles.map((h) => h.point)} v={v} />}
         {newElement && (
           <ElementPreview
             line={level.shearLines.find((l) => l.id === newElement.lineId)}
@@ -387,7 +431,7 @@ export function PlanView({
       </div>
       <div className="plan-status">
         {hover ? `x ${hover.x.toFixed(1)}, y ${hover.y.toFixed(1)} ft · ` : ''}
-        {level.name} · {hint(editor, !!drafting, level, calibrationPoints.length)}
+        {level.name} · {hint(editor, !!drafting, level, calibrationPoints.length, handles.length > 0)}
       </div>
     </div>
   )

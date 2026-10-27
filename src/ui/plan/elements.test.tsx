@@ -5,7 +5,7 @@ import { t1 } from '../../model/fixtures'
 import type { Project } from '../../model/project'
 import { DEFAULT_EDITOR } from '../../model/ui'
 import { plainHtml, viewProps } from '../panels/testProps'
-import { addElement, moveShearLine, removeItem } from './edit'
+import { addElement, moveShearLine, removeItem, resizeElement } from './edit'
 import { gridlines } from './grid'
 import { PlanView } from './PlanView'
 import { snapAlong } from './snap'
@@ -69,5 +69,33 @@ describe('Element tool UI (B3.1)', () => {
       plainHtml(renderToString(<PlanView {...{ ...viewProps(t1()), editor: { ...DEFAULT_EDITOR, tool } }} />))
     expect(plan('element')).toContain('Drag along a Shear Line to add a shear wall')
     expect(plan('select')).toContain('drag a Shear Line to move it')
+  })
+})
+
+describe('resizing Lateral Elements (follow-up)', () => {
+  it('drags either end, clamped to the line and to a minimum length', () => {
+    const resize = (end: 'start' | 'end', value: number) =>
+      line2(resizeElement(t1(), 'roof', 'roof-2', 'roof-2-e1', end, value, [0, 50])).lateralElements[0]
+    expect(resize('end', 28)).toMatchObject({ start: 0, end: 28 })
+    expect(resize('end', 80)).toMatchObject({ end: 50 }) // clamped to the 50 ft line
+    expect(resize('start', 15)).toMatchObject({ start: 15, end: 20 })
+    expect(resize('start', 25)).toMatchObject({ start: 19.5, end: 20 }) // keeps 0.5 ft minimum
+  })
+
+  it('resizing line 2’s wall from 0–20 to 15–35 (two drags) gives the T1b Collector 4.68 k', () => {
+    let project = resizeElement(t1(), 'roof', 'roof-2', 'roof-2-e1', 'end', 35, [0, 50])
+    project = resizeElement(project, 'roof', 'roof-2', 'roof-2-e1', 'start', 15, [0, 50])
+    const line = analyze(project).cases.SY.levels[0].lines.find((l) => l.lineId === 'roof-2')!
+    expect(line.collector.maxForce).toBeCloseTo(4.68, 6)
+  })
+
+  it('shows handles at the ends of the selected wall, with a hint', () => {
+    const props = {
+      ...viewProps(t1()),
+      selection: { kind: 'lateralElement', levelId: 'roof', lineId: 'roof-2', id: 'roof-2-e1' } as const,
+    }
+    const html = plainHtml(renderToString(<PlanView {...props} />))
+    expect(html.split('class="handle"').length - 1).toBe(2)
+    expect(html).toContain('Drag a square handle to change the length')
   })
 })

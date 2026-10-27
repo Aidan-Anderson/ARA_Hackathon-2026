@@ -164,3 +164,44 @@ export function resizeElement(
     ),
   }))
 }
+
+/** Shear Lines shorter than this are not allowed. */
+const MIN_LINE_FT = 1
+
+/**
+ * Move one end of a Shear Line (ADR 0002), clamped to the Diaphragm cross-section and to a 1 ft
+ * minimum. Lengthened back to the full cross-section, the line loses its extent (full depth again).
+ * Lateral Elements are trimmed to the new length; any left shorter than 0.5 ft are removed.
+ */
+export function setLineEnd(project: Project, levelId: string, lineId: string, end: 'start' | 'end', value: number): Project {
+  return updateLevel(project, levelId, (level) => ({
+    ...level,
+    shearLines: level.shearLines.map((line) => {
+      if (line.id !== lineId) return line
+      const section = crossSection(level.outline, line.direction, line.position)
+      if (!section) return line
+      let start = line.extent ? Math.max(section[0], line.extent.start) : section[0]
+      let finish = line.extent ? Math.min(section[1], line.extent.end) : section[1]
+      if (end === 'start') start = Math.min(Math.max(value, section[0]), finish - MIN_LINE_FT)
+      else finish = Math.max(Math.min(value, section[1]), start + MIN_LINE_FT)
+      const lateralElements = line.lateralElements
+        .map((element) => ({ ...element, start: Math.max(element.start, start), end: Math.min(element.end, finish) }))
+        .filter((element) => element.end - element.start >= MIN_ELEMENT_FT)
+      const { extent: _old, ...rest } = line
+      const full = start - section[0] < 0.01 && section[1] - finish < 0.01
+      return full ? { ...rest, lateralElements } : { ...rest, extent: { start, end: finish }, lateralElements }
+    }),
+  }))
+}
+
+/** Give a shortened Shear Line back its full depth. */
+export function resetLineLength(project: Project, levelId: string, lineId: string): Project {
+  return updateLevel(project, levelId, (level) => ({
+    ...level,
+    shearLines: level.shearLines.map((line) => {
+      if (line.id !== lineId) return line
+      const { extent: _old, ...rest } = line
+      return rest
+    }),
+  }))
+}

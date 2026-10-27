@@ -35,7 +35,7 @@ export function envelope(cases: Record<LoadCaseId, CaseResult>): EnvelopeEntry[]
       }
       for (const span of level.spans) {
         // 'free' marks an Overhang's free end.
-        const refId = `${span.fromLineId ?? 'free'}→${span.toLineId ?? 'free'}`
+        const refId = `${span.fromLineId ?? 'free'}→${span.toLineId ?? 'free'}${span.band ? `@${span.band.from}-${span.band.to}` : ''}`
         consider('span', refId, 'unitShear', span.maxUnitShear)
         consider('span', refId, 'chord', span.maxChord)
       }

@@ -19,6 +19,9 @@ export interface DiaphragmSpans {
   /** plf on each line's lower-s side and higher-s side; 0 where there is no Diaphragm. */
   unitShearLeft: number[]
   unitShearRight: number[]
+  /** kips: |shear| delivered to each line from its lower-s side and higher-s side. */
+  shearLeft: number[]
+  shearRight: number[]
   corners: CornerResult[]
 }
 
@@ -78,6 +81,8 @@ export function diaphragmSpans(
     spans: [],
     unitShearLeft: lines.map(() => 0),
     unitShearRight: lines.map(() => 0),
+    shearLeft: lines.map(() => 0),
+    shearRight: lines.map(() => 0),
     corners: [],
   }
   const { gross, net } = sections
@@ -87,10 +92,12 @@ export function diaphragmSpans(
     const { start, end } = beam
     if (from !== null) {
       result.reactions[from] += beam.rStart
+      result.shearRight[from] = Math.abs(beam.shearAt(start, 'right'))
       result.unitShearRight[from] = plf(beam.shearAt(start, 'right'), depthAt(net, start, 'right'))
     }
     if (to !== null) {
       result.reactions[to] += beam.rEnd
+      result.shearLeft[to] = Math.abs(beam.shearAt(end, 'left'))
       result.unitShearLeft[to] = plf(beam.shearAt(end, 'left'), depthAt(net, end, 'left'))
     }
 
@@ -166,4 +173,20 @@ function plf(shear: number, depth: number): number {
  */
 function stationSides(s: number[], end: number): ('left' | 'right')[] {
   return s.map((value, i) => (s[i + 1] === value || value >= end ? 'left' : 'right'))
+}
+
+/**
+ * A strip's share of a line load (wind) when shortened Shear Lines cut the Diaphragm into strips
+ * (ADR 0002): w × strip depth / full depth at each point along the span.
+ */
+export function stripLineLoad(fullGross: DepthPiece[], stripGross: DepthPiece[], w: number): BeamLoads {
+  return {
+    uniform: stripGross
+      .filter((piece) => piece.depth > 0)
+      .map((piece) => {
+        const full = depthAt(fullGross, (piece.from + piece.to) / 2, 'right')
+        return { from: piece.from, to: piece.to, w: full > 0 ? (w * piece.depth) / full : 0 }
+      }),
+    points: [],
+  }
 }

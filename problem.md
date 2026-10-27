@@ -231,6 +231,7 @@ at the **plan model** (which is also the save file format), agreed in phase 0.
 | Grill R4 | Numbered Gridlines vertical, lettered horizontal; spacings typed as a list | Common US convention; fast to enter real grids |
 | Grill R4 | Branches `track-a` / `track-b`, merged at phase ends | Matches the "working app after every phase" rule |
 | Grill R4 | Demo runs locally from a prepared project file | No deployment risk; shows every feature in 2 minutes |
+| Build | Shear Lines can be shortened on the plan; the Diaphragm is then split into Strips, each a simple beam between the lines covering it (ADR 0002). Walls and frames can be resized by dragging their ends | Engineers need interior lines that stop partway; full-depth lines still give the original results |
 
 ## 10. Inspiration and references
 

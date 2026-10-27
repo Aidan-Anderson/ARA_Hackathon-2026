@@ -1,13 +1,14 @@
 // Warnings and errors per Level (docs/spec.md §5.13). Raised once per Level and direction,
 // not per Load Case.
 
-import { crossSection } from '../model/geometry'
+import { shearLineExtent } from '../model/geometry'
 import { checkOutline } from '../model/outline'
 import type { Axis, Level, Project, ShearLine } from '../model/project'
 import type { Warning } from '../model/results'
 import { clippedElements } from './collectors'
 import { overhangs, shearLinesIn } from './diaphragm'
 import { continuation } from './levels'
+import { diaphragmBands, supportsBand } from './bands'
 import { cutAt, extentOf, levelSections } from './sections'
 
 /** SDPWS §4.2.6 cantilever limit used for the Overhang warning. */
@@ -34,6 +35,7 @@ export function levelWarnings(level: Level): Warning[] {
       continue
     }
     for (const line of lines) warnings.push(...lineWarnings(level, line))
+    warnings.push(...stripWarnings(level, direction, lines))
 
     const extent = extentOf(levelSections(level, direction).gross)
     if (!extent) continue
@@ -91,7 +93,7 @@ export function transferWarnings(project: Project, invalid: Set<string | undefin
 
 /** Lateral Elements that stick out past the line (they get clipped), and lines with none at all. */
 function lineWarnings(level: Level, line: ShearLine): Warning[] {
-  const section = crossSection(level.outline, line.direction, line.position)
+  const section = shearLineExtent(level.outline, line) // its own extent if shortened
   if (!section) return []
   const warnings: Warning[] = []
   const [lo, hi] = section
@@ -116,4 +118,19 @@ function lineWarnings(level: Level, line: ShearLine): Warning[] {
     })
   }
   return warnings
+}
+
+/** Strips of Diaphragm that no Shear Line supports once some lines are shortened (ADR 0002). */
+function stripWarnings(level: Level, direction: Axis, lines: ShearLine[]): Warning[] {
+  const bands = diaphragmBands(level, direction, lines)
+  if (bands.length === 1) return []
+  const across = direction === 'Y' ? 'y' : 'x'
+  return bands
+    .filter((band) => extentOf(levelSections(level, direction, band).gross) && !lines.some((line) => supportsBand(level, line, band)))
+    .map((band) => ({
+      severity: 'error' as const,
+      code: 'unsupported-strip' as const,
+      levelId: level.id,
+      message: `${level.name}: no ${direction} Shear Line covers the Diaphragm between ${across} = ${band[0].toFixed(1)} and ${band[1].toFixed(1)} ft, so that strip's load has nowhere to go. Lengthen a line to cover it.`,
+    }))
 }

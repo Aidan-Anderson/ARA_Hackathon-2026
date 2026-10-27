@@ -1,7 +1,9 @@
 // Track A: the selected element in every Load Case plus the Envelope, with ρ (Lateral Elements) or
 // Ω₀ (Collectors) applied to seismic cases only (spec §5.12, §6.5). Wind rows show E and 0.6·E.
 
+import { isShortened, shearLineExtent } from '../../model/geometry'
 import type { Axis, Level, Project } from '../../model/project'
+import { resetLineLength } from '../plan/edit'
 import { LOAD_CASES, type CaseResult, type LoadCaseId, type Results } from '../../model/results'
 import type { AppViewProps, Selection } from '../../model/ui'
 import { Demand } from './Demand'
@@ -9,7 +11,7 @@ import './ResultsPanel.css'
 
 const SEISMIC = new Set<LoadCaseId>(['SX', 'SY'])
 
-export function DetailPanel({ project, results, selection, setSelection }: AppViewProps) {
+export function DetailPanel({ project, setProject, results, selection, setSelection }: AppViewProps) {
   if (!selection) {
     return (
       <div className="results">
@@ -23,7 +25,11 @@ export function DetailPanel({ project, results, selection, setSelection }: AppVi
       <div className="detail-bar">
         <button onClick={() => setSelection(null)}>Clear selection</button>
       </div>
-      {level ? <Detail project={project} results={results} level={level} selection={selection} /> : <Gone />}
+      {level ? (
+        <Detail project={project} setProject={setProject} results={results} level={level} selection={selection} />
+      ) : (
+        <Gone />
+      )}
     </div>
   )
 }
@@ -49,6 +55,7 @@ function Gone() {
 
 interface DetailProps<K> {
   project: Project
+  setProject: AppViewProps['setProject']
   results: Results
   level: Level
   levelIndex: number
@@ -83,22 +90,32 @@ function ElementDetail({ project, results, level, levelIndex, selection }: Detai
   )
 }
 
-function LineDetail({ project, results, level, levelIndex, selection }: DetailProps<'shearLine'>) {
+function LineDetail({ project, setProject, results, level, levelIndex, selection }: DetailProps<'shearLine'>) {
   const line = level.shearLines.find((l) => l.id === selection.id)
   if (!line) return <Gone />
   const lineResult = (c: CaseResult) => c.levels[levelIndex]?.lines.find((l) => l.lineId === line.id)
   const cases = LOAD_CASES.filter((loadCase) => loadCase.direction === line.direction)
   const any = cases.map((loadCase) => lineResult(results.cases[loadCase.id])).find(Boolean)
   const { omega0 } = project.loads
+  const runs = shearLineExtent(level.outline, line)
+  const shortened = isShortened(level.outline, line)
+  const along = line.direction === 'Y' ? 'y' : 'x'
   return (
     <>
       <h3>
         Shear Line {line.name} ({line.direction})
       </h3>
       <p className="results-note">
-        {level.name} · at {line.position} ft · {any ? `${any.length.toFixed(1)} ft long` : 'no results'}
+        {level.name} · at {line.position} ft
+        {runs && ` · runs ${along} ${runs[0].toFixed(1)}–${runs[1].toFixed(1)} ft (${(runs[1] - runs[0]).toFixed(1)} ft)`}
+        {shortened ? ', shortened: it supports only the strip of Diaphragm it covers' : ', full depth'}
         {any && !any.continuesBelow ? ' · stops here, so its story shear transfers to the Level below' : ''}
       </p>
+      {shortened && (
+        <div className="form-actions">
+          <button onClick={() => setProject((p) => resetLineLength(p, level.id, line.id))}>Use full depth</button>
+        </div>
+      )}
       {any && (
         <table>
           <thead>

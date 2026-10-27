@@ -15,6 +15,7 @@ import {
   moveShearLine,
   removeItem,
   resizeElement,
+  setLineEnd,
   setOutline,
   setUnderlay,
 } from './edit'
@@ -75,13 +76,15 @@ type Drag = {
   hit?: Hit
   /** The Underlay as it was when a drag to align it started. */
   underlay?: Underlay
+  /** True if the view was auto-fitted when the drag began: refit when it ends. */
+  fitted?: boolean
   /** The Lateral Element being resized, and which end. */
   elementId?: string
   end?: 'start' | 'end'
 }
 
 /** A drag handle at one end of the selected Lateral Element. */
-type Handle = { point: Point; lineId: string; elementId: string; end: 'start' | 'end' }
+type Handle = { point: Point; lineId: string; elementId?: string; end: 'start' | 'end' }
 
 /** An outline being drawn, tied to the Level it was started on. */
 type Draft = { levelId: string; points: Point[] }
@@ -92,8 +95,19 @@ function toSelection(hit: Hit, levelId: string): Selection {
     : { kind: hit.kind, levelId, id: hit.id }
 }
 
-function hint(editor: EditorState, drafting: boolean, level: Level, calibrationPoints: number, resizing: boolean): string {
-  if (editor.tool === 'select' && resizing) return 'Drag a square handle to change the length of the selected wall or frame.'
+function hint(
+  editor: EditorState,
+  drafting: boolean,
+  level: Level,
+  calibrationPoints: number,
+  resizing: 'element' | 'line' | null,
+): string {
+  if (editor.tool === 'select' && resizing === 'element') {
+    return 'Drag a square handle to resize the wall or frame; click it again to select its Shear Line.'
+  }
+  if (editor.tool === 'select' && resizing === 'line') {
+    return 'Drag a square handle to shorten or lengthen the Shear Line; it then supports only the strip it covers.'
+  }
   if (editor.tool === 'select') {
     return level.underlay && !editor.underlayLocked
       ? 'Drag the drawing to align it, then tick Lock. Click to select; drag a Shear Line to move it.'
@@ -143,16 +157,25 @@ export function PlanView({
   const size = measured ?? DEFAULT_SIZE
   const [userViewport, setUserViewport] = useState<Viewport | null>(null)
   // Leave room beside the plan for the span diagrams when they're showing.
-  const padding = editor.layers.diagrams && caseId !== 'ENV' ? 150 : 56
+  const strips =
+    caseId === 'ENV'
+      ? 0
+      : new Set(results.cases[caseId].levels.find((r) => r.levelId === level.id)?.spans.map((s) => s.band?.from ?? '') ?? []).size
+  const padding =
+    editor.layers.diagrams && caseId !== 'ENV' ? 180 + Math.max(0, strips - 1) * 144 : editor.layers.labels ? 100 : 56
   const v = userViewport ?? fitViewport(bounds, size.width, size.height, padding)
   const [hover, setHover] = useState<Point | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [rect, setRect] = useState<{ a: Point; b: Point } | null>(null)
   const [newElement, setNewElement] = useState<{ lineId: string; a: number; b: number } | null>(null)
 
-  // Handles at both ends of the selected Lateral Element; dragging one resizes it.
+  // Handles at both ends of the selected Lateral Element or Shear Line; dragging one resizes it.
   const selectedElement =
     selection?.kind === 'lateralElement' && selection.levelId === level.id ? findElement(level, selection.id) : null
+  const selectedLine =
+    selection?.kind === 'shearLine' && selection.levelId === level.id
+      ? level.shearLines.find((line) => line.id === selection.id)
+      : undefined
   const handles: Handle[] = selectedElement
     ? (['start', 'end'] as const).map((end) => ({
         point: alongLine(selectedElement.line, selectedElement.element[end]),
@@ -160,7 +183,13 @@ export function PlanView({
         elementId: selectedElement.element.id,
         end,
       }))
-    : []
+    : selectedLine
+      ? (['start', 'end'] as const).map((end, i) => ({
+          point: alongLine(selectedLine, lineExtent(level, selectedLine, bounds)[i]),
+          lineId: selectedLine.id,
+          end,
+        }))
+      : []
   const [calibration, setCalibration] = useState<{ levelId: string; points: Point[] }>({ levelId: '', points: [] })
   const calibrationPoints = editor.tool === 'calibrate' && calibration.levelId === level.id ? calibration.points : []
   const drag = useRef<Drag | null>(null)
@@ -226,7 +255,7 @@ export function PlanView({
   function onPointerDown(event: PointerEvent<SVGSVGElement>) {
     const p = local(event)
     const at = toPlan(v, p.x, p.y)
-    const base = { ...p, start: v, moved: false }
+    const base = { ...p, start: v, moved: false, fitted: userViewport === null }
     const under = event.button === 0 && (editor.tool === 'select' || editor.tool === 'element') ? lineUnder(at) : null
     const line = under && level.shearLines.find((l) => l.id === under.lineId)
     const handle =
@@ -236,6 +265,7 @@ export function PlanView({
 
     if (handle) {
       drag.current = { kind: 'resize', ...base, lineId: handle.lineId, elementId: handle.elementId, end: handle.end }
+      setUserViewport(v) // hold the view still: the edit can change what Fit would show
     } else if (event.button === 0 && editor.tool === 'opening') {
       const anchor = snapPoint(at, snap)
       drag.current = { kind: 'rect', ...base, anchor }
@@ -246,6 +276,7 @@ export function PlanView({
       setNewElement({ lineId: line.id, a: along, b: along })
     } else if (editor.tool === 'select' && under) {
       drag.current = { kind: 'moveLine', ...base, lineId: under.lineId, hit: under.hit }
+      setUserViewport(v) // hold the view still while the line moves
     } else if (
       event.button === 0 &&
       editor.tool === 'select' &&
@@ -270,10 +301,14 @@ export function PlanView({
     if (!d) return
     if (Math.hypot(p.x - d.x, p.y - d.y) > CLICK_SLOP_PX) d.moved = true
     const line = d.lineId ? level.shearLines.find((l) => l.id === d.lineId) : undefined
-    if (d.kind === 'resize' && line && d.elementId && d.end) {
+    if (d.kind === 'resize' && line && d.end) {
       const value = snapAlong(line.direction, at, snap)
-      const extent = lineExtent(level, line, bounds)
-      setProject((p) => resizeElement(p, level.id, line.id, d.elementId!, d.end!, value, extent))
+      if (d.elementId) {
+        const extent = lineExtent(level, line, bounds)
+        setProject((p) => resizeElement(p, level.id, line.id, d.elementId!, d.end!, value, extent))
+      } else {
+        setProject((p) => setLineEnd(p, level.id, line.id, d.end!, value))
+      }
     }
     if (d.kind === 'pan' && d.moved) setUserViewport({ ...d.start, ox: d.start.ox + p.x - d.x, oy: d.start.oy + p.y - d.y })
     if (d.kind === 'rect' && d.anchor) setRect({ a: d.anchor, b: snapPoint(at, snap) })
@@ -303,6 +338,8 @@ export function PlanView({
       setProject((p) => addOpening(p, level.id, d.anchor!, corner))
       return
     }
+    // The view was held still during the drag; if it was auto-fitted before, fit again now.
+    if ((d.kind === 'resize' || d.kind === 'moveLine' || d.kind === 'underlay') && d.fitted) setUserViewport(null)
     if (d.kind === 'resize') return
     if (d.kind === 'element') {
       const line = level.shearLines.find((l) => l.id === d.lineId)
@@ -314,7 +351,12 @@ export function PlanView({
       return
     }
     if (d.kind === 'moveLine') {
-      if (!d.moved && d.hit) setSelection(toSelection(d.hit, level.id))
+      if (!d.moved && d.hit) {
+        // Clicking an already-selected wall selects its Shear Line (walls usually cover their line).
+        const clicked = toSelection(d.hit, level.id)
+        const again = d.hit.kind === 'lateralElement' && sameSelection(selection, clicked)
+        setSelection(again && d.lineId ? { kind: 'shearLine', levelId: level.id, id: d.lineId } : clicked)
+      }
       return
     }
     if (d.kind === 'underlay' && d.moved) return
@@ -431,7 +473,7 @@ export function PlanView({
       </div>
       <div className="plan-status">
         {hover ? `x ${hover.x.toFixed(1)}, y ${hover.y.toFixed(1)} ft · ` : ''}
-        {level.name} · {hint(editor, !!drafting, level, calibrationPoints.length, handles.length > 0)}
+        {level.name} · {hint(editor, !!drafting, level, calibrationPoints.length, selectedElement ? 'element' : selectedLine ? 'line' : null)}
       </div>
     </div>
   )

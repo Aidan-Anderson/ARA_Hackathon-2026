@@ -1,4 +1,4 @@
-import type { Axis, Point } from './project'
+import type { Axis, Point, ShearLine } from './project'
 
 /** Offset used to look just before and just after an outline edge. */
 const EPS = 1e-6
@@ -36,4 +36,25 @@ function cut(outline: Point[], direction: Axis, c: number): [number, number] | n
   }
   if (hits.length < 2) return null
   return [Math.min(...hits), Math.max(...hits)]
+}
+
+/**
+ * Where a Shear Line actually runs: its Diaphragm cross-section, cut down to its own `extent` if it
+ * has one. null if it misses the Diaphragm.
+ */
+export function shearLineExtent(outline: Point[], line: ShearLine): [number, number] | null {
+  const section = crossSection(outline, line.direction, line.position)
+  if (!section || !line.extent) return section
+  const lo = Math.max(section[0], line.extent.start)
+  const hi = Math.min(section[1], line.extent.end)
+  return hi - lo > 1e-9 ? [lo, hi] : null
+}
+
+/** True if the line is shorter than the Diaphragm cross-section at its position (ADR 0002). */
+export function isShortened(outline: Point[], line: ShearLine): boolean {
+  if (!line.extent) return false
+  const section = crossSection(outline, line.direction, line.position)
+  const extent = shearLineExtent(outline, line)
+  if (!section || !extent) return false
+  return extent[0] - section[0] > 0.01 || section[1] - extent[1] > 0.01
 }

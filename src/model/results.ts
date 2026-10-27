@@ -69,6 +69,11 @@ export interface Diagram {
 
 export interface SpanResult {
   kind: 'span' | 'overhang'
+  /**
+   * The strip of Diaphragm this span belongs to (ft across the depth), present only when shortened
+   * Shear Lines split the Diaphragm into strips (ADR 0002).
+   */
+  band?: { from: number; to: number }
   /** null at the free end of an Overhang */
   fromLineId: string | null
   toLineId: string | null
@@ -136,7 +141,10 @@ export interface TransferResult {
 export interface EnvelopeEntry {
   levelId: string
   kind: 'lateralElement' | 'line' | 'collector' | 'transferCollector' | 'span'
-  /** element id, line id, line id, "fromLevelId:fromLineId", or "lineIdFrom→lineIdTo" ("free" at an Overhang's free end) */
+  /**
+   * element id, line id, line id, "fromLevelId:fromLineId", or "lineIdFrom→lineIdTo" ("free" at an
+   * Overhang's free end, and "@from-to" appended for a span in a strip)
+   */
   refId: string
   quantity: 'force' | 'storyShear' | 'unitShear' | 'chord' | 'collectorForce'
   strength: { value: number; caseId: LoadCaseId }
@@ -154,6 +162,7 @@ export interface Warning {
     | 'overhang-long' // Overhang longer than 6 ft
     | 'transfer-outside' // a stopped Shear Line lands outside the Diaphragm below
     | 'reentrant-irregularity' // §12.3.3.4 +25% applied to Collectors (A5 only)
+    | 'unsupported-strip' // shortened Shear Lines leave a strip of Diaphragm with no support
   levelId?: string
   refId?: string
   message: string

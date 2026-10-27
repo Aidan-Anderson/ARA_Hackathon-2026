@@ -1,3 +1,4 @@
+import { shearLineExtent } from '../model/geometry'
 import type { Axis, Level, Project, ShearLine } from '../model/project'
 import {
   LOAD_CASES,
@@ -15,8 +16,8 @@ import {
   diaphragmSpans,
   lineLoad,
   shearLinesIn,
+  stripLineLoad,
   totalLoad,
-  type DiaphragmSpans,
 } from './diaphragm'
 import { envelope } from './envelope'
 import { levelForces, type LevelForces } from './forces'
@@ -26,7 +27,8 @@ import {
   irregularityApplies,
   reentrantIrregularity,
 } from './seismicCode'
-import { cutAt, extentOf, levelSections, reentrantVertices } from './sections'
+import { cutAt, extentOf, levelSections, reentrantVertices, totalLength } from './sections'
+import { diaphragmBands, supportsBand, transferShares } from './bands'
 import { levelWarnings, transferWarnings } from './validate'
 import type { BeamLoads } from './beam'
 
@@ -123,9 +125,21 @@ function analyzeStack(
   return results
 }
 
+/** What one Shear Line collects, summed over the strips it supports. */
+interface LineTotals {
+  reactionFx: number
+  reactionFpx: number
+  shearLeft: number
+  shearRight: number
+  /** Only used with a single strip, where they are exact per side. */
+  unitShearLeft: number
+  unitShearRight: number
+}
+
 /**
  * One Level in one Load Case. windPlf is null for seismic; wind has one run, used as both F_x and F_px.
- * Transfer Forces from above go into both runs as point loads (spec §5.10).
+ * Transfer Forces from above go into both runs as point loads (spec §5.10). Shortened Shear Lines
+ * split the Diaphragm into strips, each a simple beam between the lines covering it (ADR 0002).
  */
 function analyzeLevel(
   level: Level,
@@ -137,7 +151,8 @@ function analyzeLevel(
 ): LevelResult {
   const sections = levelSections(level, direction)
   const extent = extentOf(sections.gross)
-  const wind = windPlf === null ? null : lineLoad(sections.gross, windPlf / 1000)
+  const windW = windPlf === null ? null : windPlf / 1000
+  const wind = windW === null ? null : lineLoad(sections.gross, windW)
 
   const result: LevelResult = {
     levelId: level.id,
@@ -154,19 +169,51 @@ function analyzeLevel(
   const lines = shearLinesIn(level, direction)
   if (lines.length < 2 || !extent || forces.netArea <= 0) return result
 
-  const transfers = incoming.transfers.map((t) => ({ at: t.line.position, p: t.force }))
-  const withTransfers = (loads: BeamLoads): BeamLoads => ({ uniform: loads.uniform, points: [...loads.points, ...transfers] })
-  const fpxLoads = withTransfers(wind ?? areaLoad(sections.net, forces.fpx.design / forces.netArea))
-  const fpxRun = diaphragmSpans(lines, fpxLoads, sections, extent, reentrantVertices(level.outline, direction, sections.gross))
-  const reactionsFx = wind
-    ? fpxRun.reactions
-    : diaphragmReactions(lines, withTransfers(areaLoad(sections.net, forces.fx / forces.netArea)), extent)
+  const bands = diaphragmBands(level, direction, lines)
+  const banded = bands.length > 1
+  const totals = new Map<string, LineTotals>(
+    lines.map((line) => [line.id, { reactionFx: 0, reactionFpx: 0, shearLeft: 0, shearRight: 0, unitShearLeft: 0, unitShearRight: 0 }]),
+  )
+  const shares = incoming.transfers.map((t) => transferShares(shearLineExtent(level.outline, t.line), bands))
 
-  result.spans = fpxRun.spans
-  result.corners = fpxRun.corners
+  bands.forEach((band, b) => {
+    const bandSections = banded ? levelSections(level, direction, band) : sections
+    const bandExtent = extentOf(bandSections.gross)
+    const supporting = lines.filter((line) => supportsBand(level, line, band))
+    if (!bandExtent || supporting.length === 0) return // validate reports unsupported strips
+
+    const points = incoming.transfers
+      .map((t, k) => ({ at: t.line.position, p: t.force * shares[k][b] }))
+      .filter((point) => point.p !== 0)
+    const withTransfers = (loads: BeamLoads): BeamLoads => ({ uniform: loads.uniform, points: [...loads.points, ...points] })
+    const bandWind = windW === null ? null : banded ? stripLineLoad(sections.gross, bandSections.gross, windW) : wind
+    const fpxRun = diaphragmSpans(
+      supporting,
+      withTransfers(bandWind ?? areaLoad(bandSections.net, forces.fpx.design / forces.netArea)),
+      bandSections,
+      bandExtent,
+      reentrantVertices(level.outline, direction, bandSections.gross),
+    )
+    const reactionsFx = bandWind
+      ? fpxRun.reactions
+      : diaphragmReactions(supporting, withTransfers(areaLoad(bandSections.net, forces.fx / forces.netArea)), bandExtent)
+
+    supporting.forEach((line, i) => {
+      const t = totals.get(line.id)!
+      t.reactionFx += reactionsFx[i]
+      t.reactionFpx += fpxRun.reactions[i]
+      t.shearLeft += fpxRun.shearLeft[i]
+      t.shearRight += fpxRun.shearRight[i]
+      t.unitShearLeft += fpxRun.unitShearLeft[i]
+      t.unitShearRight += fpxRun.unitShearRight[i]
+    })
+    result.spans.push(...(banded ? fpxRun.spans.map((span) => ({ ...span, band: { from: band[0], to: band[1] } })) : fpxRun.spans))
+    result.corners.push(...fpxRun.corners)
+  })
+
   result.transfersIn = incoming.transfers.map((transfer) => transferResult(level, direction, transfer))
-  result.lines = lines.map((line, i) =>
-    lineResult(line, level, reactionsFx[i], fpxRun, i, incoming.shear.get(line.id) ?? 0, below),
+  result.lines = lines.map((line) =>
+    lineResult(line, level, totals.get(line.id)!, banded, incoming.shear.get(line.id) ?? 0, below),
   )
   return result
 }
@@ -174,24 +221,26 @@ function analyzeLevel(
 function lineResult(
   line: ShearLine,
   level: Level,
-  reactionFx: number,
-  fpxRun: DiaphragmSpans,
-  i: number,
+  totals: LineTotals,
+  banded: boolean,
   shearFromAbove: number,
   below: Level | null,
 ): LineResult {
-  const cut = cutAt(level, line.direction, line.position)
-  const storyShear = reactionFx + shearFromAbove
+  // Along the line's own extent: the full cross-section unless it has been shortened.
+  const cut = cutAt(level, line.direction, line.position, shearLineExtent(level.outline, line) ?? undefined)
+  const netLength = cut ? totalLength(cut.net) : 0
+  const plf = (shear: number) => (netLength > 0 ? (shear / netLength) * 1000 : 0)
+  const storyShear = totals.reactionFx + shearFromAbove
   return {
     lineId: line.id,
     length: cut ? cut.section[1] - cut.section[0] : 0,
-    reactionFx,
-    reactionFpx: fpxRun.reactions[i],
+    reactionFx: totals.reactionFx,
+    reactionFpx: totals.reactionFpx,
     storyShear,
-    unitShearLeft: fpxRun.unitShearLeft[i],
-    unitShearRight: fpxRun.unitShearRight[i],
+    unitShearLeft: banded ? plf(totals.shearLeft) : totals.unitShearLeft,
+    unitShearRight: banded ? plf(totals.shearRight) : totals.unitShearRight,
     elements: cut ? elementDemands(line, cut.section, storyShear) : [],
-    collector: cut ? lineCollector(line, cut, fpxRun.reactions[i]) : { force: { s: [], v: [] }, maxForce: 0 },
+    collector: cut ? lineCollector(line, cut, totals.reactionFpx) : { force: { s: [], v: [] }, maxForce: 0 },
     // The bottom Level's lines go to the foundation.
     continuesBelow: !below || continuation(line, below) !== undefined,
   }

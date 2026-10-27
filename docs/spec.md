@@ -159,7 +159,8 @@ export interface ShearLine {
   position: number;         // ft: x for Y-lines, y for X-lines
   lateralElements: LateralElement[];
 }
-// A Shear Line's length is not stored. It is the Diaphragm cross-section at its position (section 5.2).
+// By default a Shear Line runs the Diaphragm cross-section at its position (section 5.2). An optional
+// extent?: { start, end } (ft along the line) shortens it; it then supports only the strip it covers (ADR 0002).
 
 export interface LateralElement {
   id: string;
@@ -758,7 +759,7 @@ Challenge any of these that look wrong:
 
 1. **Grid origin:** Gridline A is at the bottom (y = 0) and Gridline 1 is at the left (x = 0).
 2. **Level order:** Levels are stored bottom → top. `storyHeight` is the Story *below* the Level. "+ Level" adds on top as a copy of the top Level.
-3. **Shear Line length:** not stored. It is the Diaphragm cross-section at the line's position, taking the larger side at a depth step.
+3. **Shear Line length:** by default the Diaphragm cross-section at the line's position, taking the larger side at a depth step. The user can shorten a line (drag its end handles); a shortened line supports only the Strip it covers, per [ADR 0002](adr/0002-shortened-shear-lines-strip-method.md).
 4. **Overhangs** beyond the outermost Shear Line are cantilevers to that line, with a warning above 6 ft (research: SDPWS §4.2.6).
 5. **At least 2 Shear Lines per direction** on each Level. Otherwise that direction gets no results (error).
 6. **Diaphragm design force** = max(F_x, F_px), per the research (FEMA P-2192).

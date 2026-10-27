@@ -269,9 +269,15 @@ function LevelTables({
             </thead>
             <tbody>
               {levelResult.spans.map((span) => (
-                <tr key={`${span.start}-${span.end}`}>
+                <tr key={`${span.band?.from ?? ''}:${span.start}-${span.end}`}>
                   <td>
                     {line(span.fromLineId)?.name ?? 'free end'}→{line(span.toLineId)?.name ?? 'free end'}
+                    {span.band && (
+                      <span className="muted">
+                        {' '}
+                        strip {caseResult.direction === 'Y' ? 'y' : 'x'} {span.band.from}–{span.band.to}
+                      </span>
+                    )}
                   </td>
                   <td>{(span.end - span.start).toFixed(1)}</td>
                   <td>
@@ -470,8 +476,9 @@ function envelopeName(project: Project, level: Level, entry: EnvelopeEntry): str
     case 'collector':
       return `Line ${lineName(entry.refId)} Collector`
     case 'span': {
-      const [from, to] = entry.refId.split('→')
-      return `Span ${lineName(from)}→${lineName(to)}`
+      const [path, strip] = entry.refId.split('@')
+      const [from, to] = path.split('→')
+      return `Span ${lineName(from)}→${lineName(to)}${strip ? ` (strip ${strip.replace('-', '–')} ft)` : ''}`
     }
     case 'transferCollector': {
       const [fromLevelId, fromLineId] = entry.refId.split(':')

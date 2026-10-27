@@ -96,6 +96,6 @@ describe('resizing Lateral Elements (follow-up)', () => {
     }
     const html = plainHtml(renderToString(<PlanView {...props} />))
     expect(html.split('class="handle"').length - 1).toBe(2)
-    expect(html).toContain('Drag a square handle to change the length')
+    expect(html).toContain('Drag a square handle to resize the wall or frame')
   })
 })

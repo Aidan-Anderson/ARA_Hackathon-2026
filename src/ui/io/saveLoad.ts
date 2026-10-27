@@ -64,6 +64,13 @@ function projectProblem(data: unknown): string | null {
       ) {
         return `${label} has an incomplete Shear Line.`
       }
+      // A shortened line's extent is optional, but must be a real range if present (ADR 0002).
+      if (
+        line.extent !== undefined &&
+        (!isObject(line.extent) || !numbers(line.extent, ['start', 'end']) || !((line.extent.end as number) > (line.extent.start as number)))
+      ) {
+        return `${label} has a Shear Line with an invalid length.`
+      }
     }
   }
   return null

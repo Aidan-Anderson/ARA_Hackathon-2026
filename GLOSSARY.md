@@ -44,8 +44,12 @@ An inside corner of a non-rectangular Diaphragm, where the Chord force at the na
 ## Load path
 
 **Shear Line**:
-A line in plan, parallel to the load direction, that supports the Diaphragm and receives its reaction.
+A line in plan, parallel to the load direction, that supports the Diaphragm and receives its reaction. It runs the full Diaphragm depth unless it has been shortened.
 _Avoid_: resisting line, LFRS line, wall line
+
+**Strip**:
+A band of the Diaphragm across its depth, bounded by the ends of shortened Shear Lines. Each Strip spans between the Shear Lines that cover it.
+_Avoid_: band, sub-diaphragm
 
 **Lateral Element**:
 A shear wall or braced frame on a Shear Line. A Shear Line can have more than one, with gaps between them.

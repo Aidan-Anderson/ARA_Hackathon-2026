@@ -35,7 +35,11 @@ export interface Cut {
   net: [number, number][]
 }
 
-export function levelSections(level: Level, direction: Axis): Sections {
+/**
+ * Cross-sections along the span axis. With `band`, only the strip of Diaphragm between band[0] and
+ * band[1] across the depth counts (shortened Shear Lines, ADR 0002).
+ */
+export function levelSections(level: Level, direction: Axis, band?: [number, number]): Sections {
   const across = acrossOf(direction)
   const breaks = uniqueSorted([
     ...level.outline.map(across),
@@ -46,7 +50,7 @@ export function levelSections(level: Level, direction: Axis): Sections {
   for (let i = 0; i + 1 < breaks.length; i++) {
     const from = breaks[i]
     const to = breaks[i + 1]
-    const cut = cutAt(level, direction, (from + to) / 2)
+    const cut = cutAt(level, direction, (from + to) / 2, band)
     if (!cut) continue
     gross.push({ from, to, depth: cut.section[1] - cut.section[0] })
     net.push({ from, to, depth: totalLength(cut.net) })
@@ -57,11 +61,14 @@ export function levelSections(level: Level, direction: Axis): Sections {
 
 /**
  * The cut at s along the load direction, which is also where a Shear Line at position s runs.
- * Openings count only where s passes strictly through them. null if s misses the Diaphragm.
+ * Openings count only where s passes strictly through them. With `clip`, only that part of the cut
+ * counts (a strip, or a shortened line's extent). null if s misses the Diaphragm.
  */
-export function cutAt(level: Level, direction: Axis, s: number): Cut | null {
-  const section = crossSection(level.outline, direction, s)
-  if (!section) return null
+export function cutAt(level: Level, direction: Axis, s: number, clip?: [number, number]): Cut | null {
+  const full = crossSection(level.outline, direction, s)
+  if (!full) return null
+  const section: [number, number] = clip ? [Math.max(full[0], clip[0]), Math.min(full[1], clip[1])] : full
+  if (section[1] - section[0] <= EPS) return null
   const holes = level.openings
     .filter((o) => {
       const [a, b] = openingAcross(o, direction)

@@ -20,7 +20,7 @@ import {
 import { toScreen, type Bounds, type Viewport } from './viewport'
 
 /** Screen layout of the span diagrams beside the plan. */
-const DIAGRAM_GAP_PX = 64
+const DIAGRAM_GAP_PX = 92 // clears the Gridline bubbles below the plan
 const DIAGRAM_AMP_PX = 26
 const DIAGRAM_SPACING_PX = 72
 
@@ -172,8 +172,7 @@ function SpanDiagrams({
   const spans = levelResult.spans
   if (spans.length === 0) return null
   const loadInY = direction === 'Y' // spans run along x, diagrams go below the plan
-  const shearBase = loadInY ? toScreen(v, { x: 0, y: bounds.yMin }).y + DIAGRAM_GAP_PX : toScreen(v, { x: bounds.xMax, y: 0 }).x + DIAGRAM_GAP_PX
-  const momentBase = shearBase + DIAGRAM_SPACING_PX
+  const firstBase = loadInY ? toScreen(v, { x: 0, y: bounds.yMin }).y + DIAGRAM_GAP_PX : toScreen(v, { x: bounds.xMax, y: 0 }).x + DIAGRAM_GAP_PX
   const maxShear = Math.max(...spans.map((s) => s.maxShear))
   const maxMoment = Math.max(...spans.map((s) => s.maxMoment))
   const along = (s: number) => (loadInY ? toScreen(v, { x: s, y: 0 }).x : toScreen(v, { x: 0, y: s }).y)
@@ -181,43 +180,68 @@ function SpanDiagrams({
     const offset = max > 1e-9 ? (value / max) * DIAGRAM_AMP_PX : 0
     return loadInY ? { x: along(s), y: base - offset } : { x: base + offset, y: along(s) }
   }
-  const start = Math.min(...spans.map((s) => s.start))
-  const end = Math.max(...spans.map((s) => s.end))
 
-  const band = (kind: 'shear' | 'moment', base: number, max: number, caption: string) => (
-    <g className={`span-band ${kind}`}>
-      <line className="diagram-baseline" {...segment(point(start, 0, base, max), point(end, 0, base, max))} />
-      {spans.map((span) => {
-        const diagram = kind === 'shear' ? span.shear : span.moment
-        const pts = [point(span.start, 0, base, max), ...diagram.s.map((s, i) => point(s, diagram.v[i], base, max)), point(span.end, 0, base, max)]
-        const peak = indexOfMaxAbs(diagram.v)
-        const tip = peak >= 0 ? point(diagram.s[peak], diagram.v[peak], base, max) : null
+  const row = (rowSpans: SpanResult[], kind: 'shear' | 'moment', base: number, max: number, caption: string) => {
+    const start = Math.min(...rowSpans.map((s) => s.start))
+    const end = Math.max(...rowSpans.map((s) => s.end))
+    return (
+      <g className={`span-band ${kind}`}>
+        <line className="diagram-baseline" {...segment(point(start, 0, base, max), point(end, 0, base, max))} />
+        {rowSpans.map((span) => {
+          const diagram = kind === 'shear' ? span.shear : span.moment
+          const pts = [point(span.start, 0, base, max), ...diagram.s.map((s, i) => point(s, diagram.v[i], base, max)), point(span.end, 0, base, max)]
+          const peak = indexOfMaxAbs(diagram.v)
+          const tip = peak >= 0 ? point(diagram.s[peak], diagram.v[peak], base, max) : null
+          return (
+            <g key={`${span.start}-${span.end}`}>
+              <polygon className={`span-diagram ${kind}`} points={pts.map((p) => `${p.x},${p.y}`).join(' ')} />
+              {labels && tip && Math.abs(diagram.v[peak]) > 1e-6 && (
+                <text className="result-label" x={tip.x + (loadInY ? 0 : 4)} y={tip.y - (loadInY ? 4 : 0)} textAnchor={loadInY ? 'middle' : 'start'}>
+                  {kips(Math.abs(diagram.v[peak]) * factor)}
+                </text>
+              )}
+            </g>
+          )
+        })}
+        {labels && (
+          <text className="diagram-caption" {...captionPosition(loadInY, point(start, 0, base, max))}>
+            {caption}
+          </text>
+        )}
+      </g>
+    )
+  }
+
+  // Shortened Shear Lines split the Diaphragm into strips (ADR 0002): one pair of diagrams per strip.
+  return (
+    <g className="span-diagrams">
+      {groupByStrip(spans).map((strip, k) => {
+        const shearBase = firstBase + k * 2 * DIAGRAM_SPACING_PX
+        const label = strip.band ? ` · strip ${loadInY ? 'y' : 'x'} ${strip.band.from}–${strip.band.to}` : ''
         return (
-          <g key={`${span.start}-${span.end}`}>
-            <polygon className={`span-diagram ${kind}`} points={pts.map((p) => `${p.x},${p.y}`).join(' ')} />
-            {labels && tip && Math.abs(diagram.v[peak]) > 1e-6 && (
-              <text className="result-label" x={tip.x + (loadInY ? 0 : 4)} y={tip.y - (loadInY ? 4 : 0)} textAnchor={loadInY ? 'middle' : 'start'}>
-                {kips(Math.abs(diagram.v[peak]) * factor)}
-              </text>
-            )}
+          <g key={k}>
+            {row(strip.spans, 'shear', shearBase, maxShear, `V (k)${label}`)}
+            {row(strip.spans, 'moment', shearBase + DIAGRAM_SPACING_PX, maxMoment, `M (k-ft)${label}`)}
           </g>
         )
       })}
-      {labels && (
-        <text className="diagram-caption" {...captionPosition(loadInY, point(start, 0, base, max))}>
-          {caption}
-        </text>
-      )}
+      {labels &&
+        spans.map((span) => (
+          <ChordLabels key={`${span.band?.from ?? ''}:${span.start}-${span.end}`} level={level} span={span} direction={direction} factor={factor} v={v} />
+        ))}
     </g>
   )
+}
 
-  return (
-    <g className="span-diagrams">
-      {band('shear', shearBase, maxShear, 'V (k)')}
-      {band('moment', momentBase, maxMoment, 'M (k-ft)')}
-      {labels && spans.map((span) => <ChordLabels key={`${span.start}-${span.end}`} level={level} span={span} direction={direction} factor={factor} v={v} />)}
-    </g>
-  )
+/** Spans grouped by the strip they belong to (one group when there are no strips). */
+function groupByStrip(spans: SpanResult[]): { band?: SpanResult['band']; spans: SpanResult[] }[] {
+  const groups = new Map<string, { band?: SpanResult['band']; spans: SpanResult[] }>()
+  for (const span of spans) {
+    const key = span.band ? `${span.band.from}-${span.band.to}` : ''
+    if (!groups.has(key)) groups.set(key, { band: span.band, spans: [] })
+    groups.get(key)!.spans.push(span)
+  }
+  return [...groups.values()]
 }
 
 /** "±T/C" at the max Chord, just inside both Chord edges of the span. */
@@ -225,7 +249,9 @@ function ChordLabels({ level, span, direction, factor, v }: { level: Level; span
   const peak = indexOfMaxAbs(span.chord.v)
   if (peak < 0 || span.chord.v[peak] < 1e-6) return null
   const s = span.chord.s[peak]
-  const section = crossSection(level.outline, direction, s)
+  const full = crossSection(level.outline, direction, s)
+  // A span in a strip has its Chords at the strip's edges.
+  const section = full && span.band ? [Math.max(full[0], span.band.from), Math.min(full[1], span.band.to)] : full
   if (!section) return null
   const text = `±${kips(span.chord.v[peak] * factor)} k`
   const edge = (t: number) => toScreen(v, direction === 'Y' ? { x: s, y: t } : { x: t, y: s })
@@ -310,7 +336,8 @@ function EnvelopeLabel({
       return <text className="result-label transfer-label" {...endLabelPosition(from.direction, end)}>↓ Collector {children}</text>
     }
     case 'span': {
-      const [fromId, toId] = entry.refId.split('→')
+      const [path, strip] = entry.refId.split('@') // "@from-to" marks a span in a strip (ADR 0002)
+      const [fromId, toId] = path.split('→')
       const from = lineOf(fromId)
       const to = lineOf(toId)
       const direction = (from ?? to)?.direction
@@ -318,11 +345,17 @@ function EnvelopeLabel({
       const lo = from?.position ?? (direction === 'Y' ? bounds.xMin : bounds.yMin)
       const hi = to?.position ?? (direction === 'Y' ? bounds.xMax : bounds.yMax)
       const mid = (lo + hi) / 2
-      // Chord labels along the bottom (or left) edge, unit shear along the top (or right) edge.
+      // Chord labels along the bottom (or left) edge, unit shear along the top (or right) edge: of the
+      // strip if the span is in one, else of the plan.
+      const [edgeLo, edgeHi] = strip
+        ? strip.split('-').map(Number)
+        : direction === 'Y'
+          ? [bounds.yMin, bounds.yMax]
+          : [bounds.xMin, bounds.xMax]
       const chord = entry.quantity === 'chord'
       const p = toScreen(
         v,
-        direction === 'Y' ? { x: mid, y: chord ? bounds.yMin : bounds.yMax } : { x: chord ? bounds.xMin : bounds.xMax, y: mid },
+        direction === 'Y' ? { x: mid, y: chord ? edgeLo : edgeHi } : { x: chord ? edgeLo : edgeHi, y: mid },
       )
       return direction === 'Y' ? (
         <text className="result-label chord-label" x={p.x} y={p.y + (chord ? -6 : 14)} textAnchor="middle">

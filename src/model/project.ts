@@ -40,7 +40,10 @@ export interface Level {
   underlay?: Underlay
 }
 
-/** A Shear Line's length is not stored: it is the Diaphragm cross-section at its position (spec §5.2). */
+/**
+ * By default a Shear Line runs the full Diaphragm cross-section at its position (spec §5.2).
+ * A shortened line has an `extent` and supports only the strip of Diaphragm it covers (ADR 0002).
+ */
 export interface ShearLine {
   id: string
   /** Gridline label if on one ("2", "B"), otherwise user text. */
@@ -50,6 +53,8 @@ export interface ShearLine {
   /** ft: x for Y-lines, y for X-lines. */
   position: number
   lateralElements: LateralElement[]
+  /** ft along the line (y for Y-lines, x for X-lines), start < end. Omit for full depth. */
+  extent?: { start: number; end: number }
 }
 
 export interface LateralElement {

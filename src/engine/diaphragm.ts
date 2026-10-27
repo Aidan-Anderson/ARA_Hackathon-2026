@@ -32,6 +32,22 @@ export function areaLoad(net: DepthPiece[], q: number): BeamLoads {
   return { uniform: net.map((piece) => ({ from: piece.from, to: piece.to, w: q * piece.depth })), points: [] }
 }
 
+/** Uniform line load w (kips/ft) wherever the Diaphragm exists: wind (spec §5.3). */
+export function lineLoad(gross: DepthPiece[], w: number): BeamLoads {
+  return {
+    uniform: gross.filter((piece) => piece.depth > 0).map((piece) => ({ from: piece.from, to: piece.to, w })),
+    points: [],
+  }
+}
+
+/** Total of all loads (kips). */
+export function totalLoad(loads: BeamLoads): number {
+  return (
+    loads.uniform.reduce((sum, load) => sum + load.w * (load.to - load.from), 0) +
+    loads.points.reduce((sum, load) => sum + load.p, 0)
+  )
+}
+
 /** Overhang lengths beyond the first and last line (0 if none). */
 export function overhangs(lines: ShearLine[], extent: [number, number]): { before: number; after: number } {
   const before = lines[0].position - extent[0]

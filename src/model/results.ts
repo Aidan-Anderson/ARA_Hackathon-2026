@@ -136,7 +136,7 @@ export interface TransferResult {
 export interface EnvelopeEntry {
   levelId: string
   kind: 'lateralElement' | 'line' | 'collector' | 'transferCollector' | 'span'
-  /** element id, line id, line id, "fromLevelId:fromLineId", or "lineIdFrom→lineIdTo" */
+  /** element id, line id, line id, "fromLevelId:fromLineId", or "lineIdFrom→lineIdTo" ("free" at an Overhang's free end) */
   refId: string
   quantity: 'force' | 'storyShear' | 'unitShear' | 'chord' | 'collectorForce'
   strength: { value: number; caseId: LoadCaseId }

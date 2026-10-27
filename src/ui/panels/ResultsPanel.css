@@ -37,6 +37,17 @@
   font-size: 0.75rem;
 }
 
+/* ASD value beneath the strength value. */
+.results .asd {
+  display: block;
+  color: #8c959f;
+  font-size: 0.6875rem;
+}
+
+.case-switch {
+  flex-wrap: wrap;
+}
+
 .results-note {
   color: #656d76;
   font-size: 0.8125rem;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { t1, t1b, t2, t3, t4, t6, t6b, t7 } from '../model/fixtures'
+import { t1, t1b, t1w, t2, t3, t4, t6, t6b, t7 } from '../model/fixtures'
 import type { Project } from '../model/project'
 import type { LoadCaseId } from '../model/results'
 import { analyze } from './analyze'
@@ -84,10 +84,65 @@ describe('analyze: Diaphragm Reactions at F_x level (A1.1)', () => {
     }
   })
 
-  it('leaves wind cases at zero until A3.2', () => {
-    const level = analyze(t1()).cases.WY.levels[0]
-    expect(level.fx).toBe(0)
-    expect(level.lines).toEqual([])
+})
+
+describe('analyze: wind, Load Cases, Envelope, ASD (A3.2)', () => {
+  it('T1w WY: 300 plf over 100 ft gives 30 k, reactions 6.0 / 15.0 / 9.0, no F_px', () => {
+    const level = analyze(t1w()).cases.WY.levels[0]
+    expect(level.fx).toBeCloseTo(30, 6)
+    expect(level.weight).toBe(0)
+    expect(level.fpx).toBeUndefined()
+    const lines = linesByName(t1w(), 'WY')
+    for (const [name, reaction] of [['1', 6.0], ['2', 15.0], ['3', 9.0]] as const) {
+      expect(lines[name].reactionFx).toBeCloseTo(reaction, 6)
+      expect(lines[name].reactionFpx).toBeCloseTo(reaction, 6) // one run for wind
+      expect(lines[name].storyShear).toBeCloseTo(reaction, 6)
+    }
+    expect(lines['2'].elements[0].force).toBeCloseTo(15.0, 6)
+  })
+
+  it('T1: wind 0 gives all-zero WX and WY results', () => {
+    const results = analyze(t1())
+    for (const caseId of ['WX', 'WY'] as const) {
+      const level = results.cases[caseId].levels[0]
+      expect(level.fx).toBe(0)
+      expect(level.lines.length).toBeGreaterThan(0)
+      for (const line of level.lines) {
+        expect(line.reactionFx).toBe(0)
+        expect(line.storyShear).toBe(0)
+        expect(line.collector.maxForce).toBe(0)
+      }
+      for (const span of level.spans) expect(span.maxChord).toBe(0)
+    }
+  })
+
+  it('ASD factors: 0.7 seismic, 0.6 wind; T1 span 2→3 Chord at ASD is 1.966 k', () => {
+    const results = analyze(t1())
+    expect(results.cases.SY.asdFactor).toBe(0.7)
+    expect(results.cases.WY.asdFactor).toBe(0.6)
+    const span = spansByName(t1(), 'SY')['2→3']
+    expect(span.maxChord * results.cases.SY.asdFactor).toBeCloseTo(1.9656, 6)
+  })
+
+  it('T1w Envelope, line 2 wall: strength 15.0 k from WY, but ASD 9.1 k from SY', () => {
+    const entry = analyze(t1w()).envelope.find((e) => e.kind === 'lateralElement' && e.refId === 'roof-2-e1')!
+    expect(entry.quantity).toBe('force')
+    expect(entry.strength.value).toBeCloseTo(15.0, 6)
+    expect(entry.strength.caseId).toBe('WY')
+    expect(entry.asd.value).toBeCloseTo(9.1, 6)
+    expect(entry.asd.caseId).toBe('SY')
+  })
+
+  it('T1 Envelope covers every element, line, Collector, and span, with the ASD Chord 1.966 k', () => {
+    const entries = analyze(t1()).envelope
+    const count = (kind: string) => entries.filter((e) => e.kind === kind).length
+    expect(count('lateralElement')).toBe(5) // one wall on each of 1, 2, 3, A, B
+    expect(count('line')).toBe(5)
+    expect(count('collector')).toBe(5)
+    expect(count('span')).toBe(2 * 3) // 1→2, 2→3, A→B; unit shear and Chord each
+    const chord = entries.find((e) => e.kind === 'span' && e.refId === 'roof-2→roof-3' && e.quantity === 'chord')!
+    expect(chord.asd.value).toBeCloseTo(1.9656, 6)
+    expect(chord.asd.caseId).toBe('SY')
   })
 })
 

@@ -138,3 +138,52 @@ export function LinePreview({
   const b = toScreen(v, direction === 'Y' ? { x: position, y: bounds.yMax } : { x: bounds.xMax, y: position })
   return <line className="line-preview" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
 }
+
+/** Pattern definitions used by the layers. Render once inside the plan's <svg>. */
+export function PlanDefs() {
+  return (
+    <defs>
+      <pattern id="opening-hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <line className="hatch-line" x1="0" y1="0" x2="0" y2="8" />
+      </pattern>
+    </defs>
+  )
+}
+
+/** Openings (B2.2): hatched, above the outline fill and below the Shear Lines. */
+export function OpeningLayer({ level, v, selection }: { level: Level; v: Viewport; selection: Selection }) {
+  return (
+    <g className="opening-layer">
+      {level.openings.map((opening) => {
+        const topLeft = toScreen(v, { x: opening.xMin, y: opening.yMax })
+        const bottomRight = toScreen(v, { x: opening.xMax, y: opening.yMin })
+        const selected = selection?.kind === 'opening' && selection.id === opening.id
+        return (
+          <rect
+            key={opening.id}
+            className={selected ? 'opening selected' : 'opening'}
+            x={topLeft.x}
+            y={topLeft.y}
+            width={bottomRight.x - topLeft.x}
+            height={bottomRight.y - topLeft.y}
+          />
+        )
+      })}
+    </g>
+  )
+}
+
+/** The rectangle being dragged out with the Opening tool. */
+export function RectPreview({ a, b, v }: { a: Point; b: Point; v: Viewport }) {
+  const topLeft = toScreen(v, { x: Math.min(a.x, b.x), y: Math.max(a.y, b.y) })
+  const bottomRight = toScreen(v, { x: Math.max(a.x, b.x), y: Math.min(a.y, b.y) })
+  return (
+    <rect
+      className="rect-preview"
+      x={topLeft.x}
+      y={topLeft.y}
+      width={bottomRight.x - topLeft.x}
+      height={bottomRight.y - topLeft.y}
+    />
+  )
+}

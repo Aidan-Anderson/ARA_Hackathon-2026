@@ -4,11 +4,22 @@
 import { useEffect, useRef, useState, type PointerEvent, type WheelEvent } from 'react'
 import { checkOutline } from '../../model/outline'
 import type { Level, Point, Project } from '../../model/project'
-import { currentLevel, type AppViewProps, type EditorState } from '../../model/ui'
-import { addShearLine, setOutline } from './edit'
+import { currentLevel, type AppViewProps, type EditorState, type Selection } from '../../model/ui'
+import { sameSelection } from '../panels/selection'
+import { addOpening, addShearLine, removeItem, setOutline } from './edit'
 import { gridlines, nearestGridline, type Gridline } from './grid'
-import { DraftLayer, GridLayer, LinePreview, OutlineLayer, ShearLineLayer } from './layers'
-import { closeOutline, drawnLineName, nextVertex, snapLinePosition, type SnapContext } from './snap'
+import { hitTest, type Hit } from './hitTest'
+import {
+  DraftLayer,
+  GridLayer,
+  LinePreview,
+  OpeningLayer,
+  OutlineLayer,
+  PlanDefs,
+  RectPreview,
+  ShearLineLayer,
+} from './layers'
+import { closeOutline, drawnLineName, nextVertex, snapLinePosition, snapPoint, type SnapContext } from './snap'
 import { useElementSize } from './useElementSize'
 import { boundsOf, fitViewport, toPlan, zoomAt, type Bounds, type Viewport } from './viewport'
 import './PlanView.css'
@@ -20,13 +31,29 @@ const CLICK_SLOP_PX = 4
 /** How close (on screen) the cursor must be to snap to a Gridline or corner. */
 const SNAP_PX = 10
 
-type Drag = { kind: 'pan' | 'click'; x: number; y: number; start: Viewport; moved: boolean }
+type Drag = {
+  kind: 'pan' | 'click' | 'rect'
+  x: number
+  y: number
+  start: Viewport
+  moved: boolean
+  /** Plan corner where an Opening rectangle started. */
+  anchor?: Point
+}
 
 /** An outline being drawn, tied to the Level it was started on. */
 type Draft = { levelId: string; points: Point[] }
 
+function toSelection(hit: Hit, levelId: string): Selection {
+  return hit.kind === 'lateralElement'
+    ? { kind: 'lateralElement', levelId, lineId: hit.lineId, id: hit.id }
+    : { kind: hit.kind, levelId, id: hit.id }
+}
+
 function hint(editor: EditorState, drafting: boolean): string {
-  if (editor.tool === 'select') return 'Drag to pan, scroll to zoom.'
+  if (editor.tool === 'select') return 'Click to select; drag to pan; scroll to zoom.'
+  if (editor.tool === 'opening') return 'Drag a rectangle to add an Opening (stair, shaft).'
+  if (editor.tool === 'delete') return 'Click a Shear Line, Lateral Element, or Opening to delete it.'
   if (editor.tool === 'outline') {
     return drafting
       ? 'Click the next corner. Click the first corner or press Enter to close; Backspace undoes; Esc cancels.'
@@ -40,7 +67,7 @@ function hint(editor: EditorState, drafting: boolean): string {
   return ''
 }
 
-export function PlanView({ project, setProject, levelId, editor, selection }: AppViewProps) {
+export function PlanView({ project, setProject, levelId, editor, selection, setSelection }: AppViewProps) {
   const level = currentLevel(project, levelId)
   const lines = gridlines(project.grid)
   const bounds = planBounds(project, level)
@@ -50,6 +77,7 @@ export function PlanView({ project, setProject, levelId, editor, selection }: Ap
   const v = userViewport ?? fitViewport(bounds, size.width, size.height)
   const [hover, setHover] = useState<Point | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
+  const [rect, setRect] = useState<{ a: Point; b: Point } | null>(null)
   const drag = useRef<Drag | null>(null)
 
   // A draft only counts on the Level and tool it was started with.
@@ -57,7 +85,14 @@ export function PlanView({ project, setProject, levelId, editor, selection }: Ap
   const tolerance = SNAP_PX / v.scale
   const snap: SnapContext = {
     mode: editor.mode,
-    vertices: [...level.outline, ...(drafting ?? [])],
+    vertices: [
+      ...level.outline,
+      ...(drafting ?? []),
+      ...level.openings.flatMap((o) => [
+        { x: o.xMin, y: o.yMin },
+        { x: o.xMax, y: o.yMax },
+      ]),
+    ],
     gridlines: lines,
     tolerance,
   }
@@ -91,36 +126,58 @@ export function PlanView({ project, setProject, levelId, editor, selection }: Ap
   })
 
   function local(event: { clientX: number; clientY: number; currentTarget: Element }) {
-    const rect = event.currentTarget.getBoundingClientRect()
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top }
+    const box = event.currentTarget.getBoundingClientRect()
+    return { x: event.clientX - box.left, y: event.clientY - box.top }
   }
 
   function onPointerDown(event: PointerEvent<SVGSVGElement>) {
     const p = local(event)
     const pan = event.button === 1 || (event.button === 0 && editor.tool === 'select')
-    drag.current = { kind: pan ? 'pan' : 'click', ...p, start: v, moved: false }
+    if (event.button === 0 && editor.tool === 'opening') {
+      const anchor = snapPoint(toPlan(v, p.x, p.y), snap)
+      drag.current = { kind: 'rect', ...p, start: v, moved: false, anchor }
+      setRect({ a: anchor, b: anchor })
+    } else {
+      drag.current = { kind: pan ? 'pan' : 'click', ...p, start: v, moved: false }
+    }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 
   function onPointerMove(event: PointerEvent<SVGSVGElement>) {
     const p = local(event)
-    setHover(toPlan(v, p.x, p.y))
+    const at = toPlan(v, p.x, p.y)
+    setHover(at)
     const d = drag.current
     if (!d) return
     if (Math.hypot(p.x - d.x, p.y - d.y) > CLICK_SLOP_PX) d.moved = true
     if (d.kind === 'pan' && d.moved) setUserViewport({ ...d.start, ox: d.start.ox + p.x - d.x, oy: d.start.oy + p.y - d.y })
+    if (d.kind === 'rect' && d.anchor) setRect({ a: d.anchor, b: snapPoint(at, snap) })
   }
 
   function onPointerUp(event: PointerEvent<SVGSVGElement>) {
     const d = drag.current
     drag.current = null
-    if (!d || d.moved || event.button !== 0) return
+    if (!d || event.button !== 0) return
     const p = local(event)
-    click(toPlan(v, p.x, p.y))
+    const at = toPlan(v, p.x, p.y)
+    if (d.kind === 'rect' && d.anchor) {
+      const corner = snapPoint(at, snap)
+      setRect(null)
+      setProject((p) => addOpening(p, level.id, d.anchor!, corner))
+      return
+    }
+    if (!d.moved) click(at)
   }
 
   function click(at: Point) {
-    if (editor.tool === 'shearLine') {
+    const hit = hitTest(level, bounds, at, tolerance)
+    if (editor.tool === 'select') {
+      setSelection(hit ? toSelection(hit, level.id) : null)
+    } else if (editor.tool === 'delete') {
+      if (!hit) return
+      setProject((p) => removeItem(p, level.id, hit))
+      if (sameSelection(selection, toSelection(hit, level.id))) setSelection(null)
+    } else if (editor.tool === 'shearLine') {
       if (editor.mode === 'grid') {
         const target = gridTarget(at)
         if (target) {
@@ -162,9 +219,12 @@ export function PlanView({ project, setProject, levelId, editor, selection }: Ap
         onPointerLeave={() => setHover(null)}
         onWheel={onWheel}
       >
+        <PlanDefs />
         <GridLayer lines={lines} v={v} bounds={bounds} highlight={gridTarget(hover)} />
         <OutlineLayer level={level} v={v} />
+        <OpeningLayer level={level} v={v} selection={selection} />
         <ShearLineLayer level={level} v={v} bounds={bounds} selection={selection} />
+        {rect && <RectPreview a={rect.a} b={rect.b} v={v} />}
         {linePreview !== null && <LinePreview direction={editor.lineDirection} position={linePreview} bounds={bounds} v={v} />}
         {(drafting || nextCorner) && <DraftLayer points={drafting ?? []} next={nextCorner} closable={closable(hover)} v={v} />}
       </svg>

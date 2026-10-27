@@ -15,6 +15,8 @@ const TOOLS: { id: EditorTool; label: string }[] = [
   { id: 'select', label: 'Select' },
   { id: 'outline', label: 'Outline' },
   { id: 'shearLine', label: 'Shear Line' },
+  { id: 'opening', label: 'Opening' },
+  { id: 'delete', label: 'Delete' },
 ]
 
 const DIRECTIONS: { id: Axis; label: string }[] = [

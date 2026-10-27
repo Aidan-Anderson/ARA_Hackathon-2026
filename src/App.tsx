@@ -13,6 +13,7 @@ import { LoadForm } from './ui/panels/LoadForm'
 import { ResultsPanel } from './ui/panels/ResultsPanel'
 import { SeismicCodePanel } from './ui/panels/SeismicCodePanel'
 import { Warnings } from './ui/panels/Warnings'
+import { LevelPicker } from './ui/plan/LevelPicker'
 import { PlanView } from './ui/plan/PlanView'
 import { Toolbar } from './ui/plan/Toolbar'
 import './App.css'
@@ -58,6 +59,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-toolbar">
+        <LevelPicker {...view} />
         <Toolbar {...view} />
         <ProjectFileMenu {...view} />
       </header>

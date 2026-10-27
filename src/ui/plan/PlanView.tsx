@@ -8,6 +8,7 @@ import type { Level, Point, Project } from '../../model/project'
 import { currentLevel, type AppViewProps, type EditorState, type Selection } from '../../model/ui'
 import { sameSelection } from '../panels/selection'
 import { addElement, addOpening, addShearLine, moveShearLine, removeItem, setOutline } from './edit'
+import { GhostLayer } from './GhostLayer'
 import { gridlines, nearestGridline, type Gridline } from './grid'
 import { hitTest, type Hit } from './hitTest'
 import {
@@ -21,6 +22,7 @@ import {
   RectPreview,
   ShearLineLayer,
 } from './layers'
+import { levelBelow } from './levels'
 import {
   closeOutline,
   drawnLineName,
@@ -99,6 +101,7 @@ export function PlanView({
   setSelection,
 }: AppViewProps) {
   const level = currentLevel(project, levelId)
+  const below = levelBelow(project, level.id)
   const lines = gridlines(project.grid)
   const bounds = planBounds(project, level)
   const [container, measured] = useElementSize<HTMLDivElement>()
@@ -297,6 +300,7 @@ export function PlanView({
         <GridLayer lines={lines} v={v} bounds={bounds} highlight={gridTarget(hover)} />
         <OutlineLayer level={level} v={v} />
         <OpeningLayer level={level} v={v} selection={selection} />
+        {editor.layers.ghost && below && <GhostLayer level={below} v={v} bounds={bounds} />}
         <ShearLineLayer level={level} v={v} bounds={bounds} selection={selection} />
         <ResultsLayer
           project={project}

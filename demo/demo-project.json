@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "name": "Demo — 2-story L",
+  "grid": {
+    "xSpacings": [30, 30, 30],
+    "ySpacings": [25, 25]
+  },
+  "levels": [
+    {
+      "id": "level-2",
+      "name": "Level 2",
+      "storyHeight": 12,
+      "outline": [
+        { "x": 0, "y": 0 },
+        { "x": 90, "y": 0 },
+        { "x": 90, "y": 25 },
+        { "x": 30, "y": 25 },
+        { "x": 30, "y": 50 },
+        { "x": 0, "y": 50 }
+      ],
+      "shearLines": [
+        {
+          "id": "L2-1",
+          "name": "1",
+          "direction": "Y",
+          "position": 0,
+          "lateralElements": [
+            { "id": "L2-1-e1", "kind": "shearWall", "start": 0, "end": 20 },
+            { "id": "L2-1-e2", "kind": "shearWall", "start": 30, "end": 50 }
+          ]
+        },
+        {
+          "id": "L2-4",
+          "name": "4",
+          "direction": "Y",
+          "position": 90,
+          "lateralElements": [{ "id": "L2-4-e1", "kind": "bracedFrame", "start": 0, "end": 25 }]
+        },
+        {
+          "id": "L2-A",
+          "name": "A",
+          "direction": "X",
+          "position": 0,
+          "lateralElements": [
+            { "id": "L2-A-e1", "kind": "shearWall", "start": 0, "end": 30 },
+            { "id": "L2-A-e2", "kind": "shearWall", "start": 60, "end": 90 }
+          ]
+        },
+        {
+          "id": "L2-C",
+          "name": "C",
+          "direction": "X",
+          "position": 50,
+          "lateralElements": [{ "id": "L2-C-e1", "kind": "shearWall", "start": 0, "end": 30 }]
+        }
+      ],
+      "openings": [{ "id": "L2-stair", "xMin": 10, "yMin": 30, "xMax": 20, "yMax": 40 }],
+      "seismic": { "fxPsf": 8, "weightPsf": 60 }
+    },
+    {
+      "id": "roof",
+      "name": "Roof",
+      "storyHeight": 12,
+      "outline": [
+        { "x": 0, "y": 0 },
+        { "x": 90, "y": 0 },
+        { "x": 90, "y": 25 },
+        { "x": 30, "y": 25 },
+        { "x": 30, "y": 50 },
+        { "x": 0, "y": 50 }
+      ],
+      "shearLines": [
+        {
+          "id": "roof-1",
+          "name": "1",
+          "direction": "Y",
+          "position": 0,
+          "lateralElements": [
+            { "id": "roof-1-e1", "kind": "shearWall", "start": 0, "end": 20 },
+            { "id": "roof-1-e2", "kind": "shearWall", "start": 30, "end": 50 }
+          ]
+        },
+        {
+          "id": "roof-3",
+          "name": "3",
+          "direction": "Y",
+          "position": 60,
+          "lateralElements": [{ "id": "roof-3-e1", "kind": "shearWall", "start": 5, "end": 20 }]
+        },
+        {
+          "id": "roof-4",
+          "name": "4",
+          "direction": "Y",
+          "position": 90,
+          "lateralElements": [{ "id": "roof-4-e1", "kind": "bracedFrame", "start": 0, "end": 25 }]
+        },
+        {
+          "id": "roof-A",
+          "name": "A",
+          "direction": "X",
+          "position": 0,
+          "lateralElements": [
+            { "id": "roof-A-e1", "kind": "shearWall", "start": 0, "end": 30 },
+            { "id": "roof-A-e2", "kind": "shearWall", "start": 60, "end": 90 }
+          ]
+        },
+        {
+          "id": "roof-C",
+          "name": "C",
+          "direction": "X",
+          "position": 50,
+          "lateralElements": [{ "id": "roof-C-e1", "kind": "shearWall", "start": 0, "end": 30 }]
+        }
+      ],
+      "openings": [],
+      "seismic": { "fxPsf": 10, "weightPsf": 30 }
+    }
+  ],
+  "loads": {
+    "sds": 1.0,
+    "ie": 1.0,
+    "windPlf": { "X": 200, "Y": 250 },
+    "rho": 1.0,
+    "omega0": 3.0
+  }
+}

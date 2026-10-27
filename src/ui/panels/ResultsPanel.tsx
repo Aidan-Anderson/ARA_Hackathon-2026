@@ -1,13 +1,20 @@
 // Track A: results tables for the current Level and Load Case, or the Envelope (spec §6.5).
-// A1.1: Level forces and Diaphragm Reactions. Later tickets add F_px, spans, elements, Collectors, ASD.
+// So far: Level forces with F_px, Shear Lines, Diaphragm Spans. Later tickets add elements, Collectors, ASD.
 
 import type { Level } from '../../model/project'
-import { LOAD_CASES, type CaseResult } from '../../model/results'
+import { LOAD_CASES, type CaseResult, type FpxResult } from '../../model/results'
 import { currentLevel, type AppViewProps } from '../../model/ui'
 import './ResultsPanel.css'
 
 // Until the toolbar picker lands (B3.2). A3.2 adds wind and the Envelope here.
 const SWITCH_CASES = LOAD_CASES.filter((loadCase) => loadCase.id === 'SX' || loadCase.id === 'SY')
+
+const GOVERNS_LABEL: Record<FpxResult['governs'], string> = {
+  equation: 'Eq. 12.10-1',
+  min: 'minimum',
+  max: 'maximum',
+  fx: 'F_x',
+}
 
 export function ResultsPanel({ project, results, levelId, caseId, setCaseId }: AppViewProps) {
   const level = currentLevel(project, levelId)
@@ -36,8 +43,10 @@ export function ResultsPanel({ project, results, levelId, caseId, setCaseId }: A
 function LevelTables({ level, caseResult }: { level: Level; caseResult: CaseResult }) {
   const levelResult = caseResult.levels.find((result) => result.levelId === level.id)
   if (!levelResult) return null
-  const lineName = (lineId: string) => level.shearLines.find((line) => line.id === lineId)?.name ?? lineId
-  const reactionSum = levelResult.lines.reduce((sum, line) => sum + line.reactionFx, 0)
+  const line = (lineId: string | null) => level.shearLines.find((sl) => sl.id === lineId)
+  const sumFx = levelResult.lines.reduce((sum, l) => sum + l.reactionFx, 0)
+  const sumFpx = levelResult.lines.reduce((sum, l) => sum + l.reactionFpx, 0)
+  const { fpx } = levelResult
 
   return (
     <>
@@ -56,6 +65,26 @@ function LevelTables({ level, caseResult }: { level: Level; caseResult: CaseResu
             <td>Seismic weight</td>
             <td>{kips(levelResult.weight)}</td>
           </tr>
+          {fpx && (
+            <>
+              <tr>
+                <td>F_px, Eq. 12.10-1</td>
+                <td>{kips(fpx.raw)}</td>
+              </tr>
+              <tr>
+                <td>F_px minimum (0.2 S_DS I_e w)</td>
+                <td>{kips(fpx.min)}</td>
+              </tr>
+              <tr>
+                <td>F_px maximum (0.4 S_DS I_e w)</td>
+                <td>{kips(fpx.max)}</td>
+              </tr>
+              <tr className="emphasis">
+                <td>Diaphragm Force F_px ({GOVERNS_LABEL[fpx.governs]} governs)</td>
+                <td>{kips(fpx.design)}</td>
+              </tr>
+            </>
+          )}
         </tbody>
       </table>
 
@@ -67,18 +96,24 @@ function LevelTables({ level, caseResult }: { level: Level; caseResult: CaseResu
           <thead>
             <tr>
               <th>Line</th>
-              <th>Position</th>
               <th>Length</th>
-              <th>Reaction F_x</th>
+              <th>R at F_x</th>
+              <th>R at F_px</th>
+              <th>v left</th>
+              <th>v right</th>
             </tr>
           </thead>
           <tbody>
-            {levelResult.lines.map((line) => (
-              <tr key={line.lineId}>
-                <td>{lineName(line.lineId)}</td>
-                <td>{feet(level.shearLines.find((sl) => sl.id === line.lineId)?.position ?? 0)}</td>
-                <td>{feet(line.length)}</td>
-                <td>{kips(line.reactionFx)}</td>
+            {levelResult.lines.map((l) => (
+              <tr key={l.lineId}>
+                <td>
+                  {line(l.lineId)?.name} <span className="muted">@ {feet(line(l.lineId)?.position ?? 0)}</span>
+                </td>
+                <td>{feet(l.length)}</td>
+                <td>{kips(l.reactionFx)}</td>
+                <td>{kips(l.reactionFpx)}</td>
+                <td>{plf(l.unitShearLeft)}</td>
+                <td>{plf(l.unitShearRight)}</td>
               </tr>
             ))}
           </tbody>
@@ -86,11 +121,45 @@ function LevelTables({ level, caseResult }: { level: Level; caseResult: CaseResu
             <tr>
               <td>Σ</td>
               <td />
+              <td>{kips(sumFx)}</td>
+              <td>{kips(sumFpx)}</td>
               <td />
-              <td>{kips(reactionSum)}</td>
+              <td />
             </tr>
           </tfoot>
         </table>
+      )}
+
+      {levelResult.spans.length > 0 && (
+        <>
+          <h3>Diaphragm Spans (at F_px)</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Span</th>
+                <th>L</th>
+                <th>max V</th>
+                <th>max v</th>
+                <th>max M</th>
+                <th>max Chord</th>
+              </tr>
+            </thead>
+            <tbody>
+              {levelResult.spans.map((span) => (
+                <tr key={`${span.start}-${span.end}`}>
+                  <td>
+                    {line(span.fromLineId)?.name ?? 'edge'}→{line(span.toLineId)?.name ?? 'edge'}
+                  </td>
+                  <td>{feet(span.end - span.start)}</td>
+                  <td>{kips(span.maxShear)}</td>
+                  <td>{plf(span.maxUnitShear)}</td>
+                  <td>{`${span.maxMoment.toFixed(1)} k-ft`}</td>
+                  <td>{kips(span.maxChord)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
     </>
   )
@@ -102,4 +171,8 @@ function kips(value: number): string {
 
 function feet(value: number): string {
   return `${value.toFixed(1)} ft`
+}
+
+function plf(value: number): string {
+  return `${value.toFixed(1)} plf`
 }

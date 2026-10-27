@@ -26,6 +26,16 @@ export function depthPieces(outline: Point[], direction: Axis): DepthPiece[] {
   return pieces
 }
 
+const EPS = 1e-9
+
+/** Depth at s from the piece just left of s, or just right of it. 0 outside the Diaphragm. */
+export function depthAt(pieces: DepthPiece[], s: number, side: 'left' | 'right'): number {
+  const piece = pieces.find((p) =>
+    side === 'left' ? p.from < s - EPS && s <= p.to + EPS : p.from - EPS <= s && s < p.to - EPS,
+  )
+  return piece?.depth ?? 0
+}
+
 /** Plan area of an outline (sf). */
 export function outlineArea(outline: Point[]): number {
   let twice = 0

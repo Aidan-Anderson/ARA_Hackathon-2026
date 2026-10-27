@@ -27,8 +27,14 @@
   font-weight: 600;
 }
 
-.results tfoot td {
+.results tfoot td,
+.results tr.emphasis td {
   font-weight: 600;
+}
+
+.results .muted {
+  color: #656d76;
+  font-size: 0.75rem;
 }
 
 .results-note {

@@ -33,6 +33,16 @@ describe('ResultsPanel', () => {
     for (const reaction of ['5.20 k', '13.00 k', '7.80 k']) expect(html).toContain(reaction)
   })
 
+  it('shows F_px with what governs, and the Diaphragm Spans table', () => {
+    const html = render(t1(), 'SY')
+    expect(html).toContain('31.20 k') // F_px design
+    expect(html).toContain('minimum governs')
+    expect(html).toContain('Diaphragm Spans')
+    expect(html).toContain('1→2')
+    expect(html).toContain('140.4 k-ft') // span 2→3 max M
+    expect(html).toContain('187.2 plf') // span 2→3 max v
+  })
+
   it('follows the inputs: doubling F_x doubles the reactions', () => {
     const project = t1()
     project.levels[0].seismic.fxPsf = 10.4

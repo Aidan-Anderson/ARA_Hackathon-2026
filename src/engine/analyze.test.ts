@@ -13,6 +13,14 @@ function linesByName(project: Project, caseId: LoadCaseId, levelIndex = 0) {
   )
 }
 
+/** Span results for one Level and Load Case, keyed "fromName→toName". */
+function spansByName(project: Project, caseId: LoadCaseId, levelIndex = 0) {
+  const level = project.levels[levelIndex]
+  const name = (lineId: string | null) => level.shearLines.find((sl) => sl.id === lineId)?.name ?? 'free'
+  const levelResult = analyze(project).cases[caseId].levels[levelIndex]
+  return Object.fromEntries(levelResult.spans.map((span) => [`${name(span.fromLineId)}→${name(span.toLineId)}`, span]))
+}
+
 describe('analyze: shape', () => {
   it('returns every Load Case with one LevelResult per Level, in order', () => {
     const project = t2()
@@ -82,3 +90,100 @@ describe('analyze: Diaphragm Reactions at F_x level (A1.1)', () => {
     expect(level.lines).toEqual([])
   })
 })
+
+describe('analyze: F_px, Diaphragm diagrams, Chords (A2.1)', () => {
+  it('T1: F_px raw 26.0, min 31.2 governs, max 62.4', () => {
+    const fpx = analyze(t1()).cases.SY.levels[0].fpx!
+    expect(fpx.raw).toBeCloseTo(26.0, 6)
+    expect(fpx.min).toBeCloseTo(31.2, 6)
+    expect(fpx.max).toBeCloseTo(62.4, 6)
+    expect(fpx.fpx).toBeCloseTo(31.2, 6)
+    expect(fpx.design).toBeCloseTo(31.2, 6)
+    expect(fpx.governs).toBe('min')
+  })
+
+  it('T1: reactions at F_px level 6.24 / 15.6 / 9.36', () => {
+    const lines = linesByName(t1(), 'SY')
+    expect(lines['1'].reactionFpx).toBeCloseTo(6.24, 6)
+    expect(lines['2'].reactionFpx).toBeCloseTo(15.6, 6)
+    expect(lines['3'].reactionFpx).toBeCloseTo(9.36, 6)
+  })
+
+  it('T1 SY spans: max V, v, M, Chord', () => {
+    const spans = spansByName(t1(), 'SY')
+    expect(Object.keys(spans)).toEqual(['1→2', '2→3'])
+    expectSpan(spans['1→2'], { maxShear: 6.24, maxUnitShear: 124.8, maxMoment: 62.4, maxChord: 1.248 })
+    expectSpan(spans['2→3'], { maxShear: 9.36, maxUnitShear: 187.2, maxMoment: 140.4, maxChord: 2.808 })
+  })
+
+  it('T1 SY: unit shear on each side of each line', () => {
+    const lines = linesByName(t1(), 'SY')
+    expect(lines['1'].unitShearLeft).toBe(0)
+    expect(lines['1'].unitShearRight).toBeCloseTo(124.8, 6)
+    expect(lines['2'].unitShearLeft).toBeCloseTo(124.8, 6)
+    expect(lines['2'].unitShearRight).toBeCloseTo(187.2, 6)
+    expect(lines['3'].unitShearLeft).toBeCloseTo(187.2, 6)
+    expect(lines['3'].unitShearRight).toBe(0)
+  })
+
+  it('T1 SX: the span runs in y and the depth is the 100 ft width', () => {
+    // F_px 31.2 k over 5000 sf → 0.624 klf along the 50 ft span between A and B.
+    expectSpan(spansByName(t1(), 'SX')['A→B'], { maxShear: 15.6, maxUnitShear: 156, maxMoment: 195, maxChord: 1.95 })
+  })
+
+  it('T2 Roof: F_px 30 by the equation; spans 6.0/120/60/1.20 and 9.0/180/135/2.70', () => {
+    const project = t2()
+    const fpx = analyze(project).cases.SY.levels[1].fpx!
+    expect(fpx.raw).toBeCloseTo(30, 6)
+    expect(fpx.min).toBeCloseTo(26, 6)
+    expect(fpx.max).toBeCloseTo(52, 6)
+    expect(fpx.design).toBeCloseTo(30, 6)
+    expect(fpx.governs).toBe('equation')
+    const spans = spansByName(project, 'SY', 1)
+    expectSpan(spans['1→2'], { maxShear: 6.0, maxUnitShear: 120, maxMoment: 60, maxChord: 1.2 })
+    expectSpan(spans['2→3'], { maxShear: 9.0, maxUnitShear: 180, maxMoment: 135, maxChord: 2.7 })
+  })
+
+  it('T2 Level 2: F_px raw 40, min 52 governs; spans 10.4/208/104/2.08 and 15.6/312/234/4.68', () => {
+    const project = t2()
+    const fpx = analyze(project).cases.SY.levels[0].fpx!
+    expect(fpx.raw).toBeCloseTo(40, 6)
+    expect(fpx.min).toBeCloseTo(52, 6)
+    expect(fpx.max).toBeCloseTo(104, 6)
+    expect(fpx.design).toBeCloseTo(52, 6)
+    expect(fpx.governs).toBe('min')
+    const spans = spansByName(project, 'SY', 0)
+    expectSpan(spans['1→2'], { maxShear: 10.4, maxUnitShear: 208, maxMoment: 104, maxChord: 2.08 })
+    expectSpan(spans['2→3'], { maxShear: 15.6, maxUnitShear: 312, maxMoment: 234, maxChord: 4.68 })
+  })
+
+  it('uses F_x for the Diaphragm when it exceeds F_px', () => {
+    const project = t1()
+    project.levels[0].seismic.weightPsf = 0 // no weight → F_px 0, so F_x governs
+    const fpx = analyze(project).cases.SY.levels[0].fpx!
+    expect(fpx.design).toBeCloseTo(26.0, 6)
+    expect(fpx.governs).toBe('fx')
+  })
+
+  it('diagrams: stations at most 1 ft apart, chords zero at the supports', () => {
+    for (const span of analyze(t1()).cases.SY.levels[0].spans) {
+      const { s, v } = span.chord
+      expect(s[0]).toBe(span.start)
+      expect(s[s.length - 1]).toBe(span.end)
+      for (let i = 1; i < s.length; i++) expect(s[i] - s[i - 1]).toBeLessThanOrEqual(1 + 1e-9)
+      expect(v[0]).toBeCloseTo(0, 9)
+      expect(v[v.length - 1]).toBeCloseTo(0, 9)
+      expect(span.shear.s).toEqual(s)
+    }
+  })
+})
+
+function expectSpan(
+  span: { maxShear: number; maxUnitShear: number; maxMoment: number; maxChord: number },
+  expected: { maxShear: number; maxUnitShear: number; maxMoment: number; maxChord: number },
+) {
+  expect(span.maxShear).toBeCloseTo(expected.maxShear, 6)
+  expect(span.maxUnitShear).toBeCloseTo(expected.maxUnitShear, 6)
+  expect(span.maxMoment).toBeCloseTo(expected.maxMoment, 6)
+  expect(span.maxChord).toBeCloseTo(expected.maxChord, 6)
+}

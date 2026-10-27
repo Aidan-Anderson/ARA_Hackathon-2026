@@ -50,6 +50,14 @@ describe('ResultsPanel', () => {
     for (const reaction of ['10.40 k', '26.00 k', '15.60 k', '52.00 k']) expect(html).toContain(reaction)
   })
 
+  it('shows Lateral Element Demands and Collector forces (T1)', () => {
+    const html = render(t1(), 'SY')
+    expect(html).toContain('Lateral Elements')
+    expect(html).toContain('650.0 plf') // line 2 wall
+    expect(html).toContain('Collectors')
+    expect(html).toContain('9.36 k') // line 2 Collector
+  })
+
   it('lists Re-entrant Corners for the L-shape (T3)', () => {
     const html = render(t3(), 'SY')
     expect(html).toContain('Re-entrant Corners')

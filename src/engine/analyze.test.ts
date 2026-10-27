@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { t1, t2, t3, t4, t6, t6b, t7 } from '../model/fixtures'
+import { t1, t1b, t2, t3, t4, t6, t6b, t7 } from '../model/fixtures'
 import type { Project } from '../model/project'
 import type { LoadCaseId } from '../model/results'
 import { analyze } from './analyze'
@@ -268,6 +268,92 @@ describe('analyze: L/T shapes, Re-entrant Corners, Openings, Overhangs (A2.2)', 
   it('T1 and T2 raise no warnings', () => {
     expect(analyze(t1()).warnings).toEqual([])
     expect(analyze(t2()).warnings).toEqual([])
+  })
+})
+
+describe('analyze: Lateral Elements and Collectors (A3.1)', () => {
+  it('T1: each line’s story shear goes to its Lateral Elements by length', () => {
+    const lines = linesByName(t1(), 'SY')
+    const only = (name: string) => {
+      expect(lines[name].elements).toHaveLength(1)
+      return lines[name].elements[0]
+    }
+    expect(only('1').force).toBeCloseTo(5.2, 6)
+    expect(only('1').unitShear).toBeCloseTo(104, 6)
+    expect(only('2').force).toBeCloseTo(13.0, 6)
+    expect(only('2').unitShear).toBeCloseTo(650, 6)
+    expect(only('3').force).toBeCloseTo(7.8, 6)
+    expect(only('3').unitShear).toBeCloseTo(156, 6)
+  })
+
+  it('splits by length when a line has two Lateral Elements', () => {
+    const project = t1()
+    const line2 = project.levels[0].shearLines.find((line) => line.name === '2')!
+    line2.lateralElements = [
+      { id: 'w-a', kind: 'shearWall', start: 0, end: 10 },
+      { id: 'w-b', kind: 'bracedFrame', start: 35, end: 50 },
+    ]
+    const [a, b] = linesByName(project, 'SY')['2'].elements
+    expect(a.force).toBeCloseTo(13.0 * (10 / 25), 6)
+    expect(b.force).toBeCloseTo(13.0 * (15 / 25), 6)
+    expect(a.unitShear).toBeCloseTo(520, 6)
+    expect(b.unitShear).toBeCloseTo(520, 6)
+  })
+
+  it('T1: line 2’s Collector peaks at 9.36 k at the wall end; full-length walls need none', () => {
+    const lines = linesByName(t1(), 'SY')
+    expect(lines['2'].collector.maxForce).toBeCloseTo(9.36, 6)
+    const { s, v } = lines['2'].collector.force
+    expect(Math.abs(v[s.indexOf(20)])).toBeCloseTo(9.36, 6)
+    expect(lines['1'].collector.maxForce).toBeCloseTo(0, 6)
+    expect(lines['3'].collector.maxForce).toBeCloseTo(0, 6)
+  })
+
+  it('T1b: a centered wall halves the Collector force to 4.68 k', () => {
+    expect(linesByName(t1b(), 'SY')['2'].collector.maxForce).toBeCloseTo(4.68, 6)
+  })
+
+  it('every Collector in T1–T4 and T7 closes to zero at the far end (equilibrium)', () => {
+    for (const project of [t1(), t1b(), t2(), t3(), t4(), t7()]) {
+      const results = analyze(project)
+      for (const caseId of ['SX', 'SY'] as const) {
+        for (const level of results.cases[caseId].levels) {
+          for (const line of level.lines) {
+            const { s, v } = line.collector.force
+            expect(s.length).toBeGreaterThan(1)
+            expect(v[0]).toBe(0)
+            expect(v[v.length - 1]).toBeCloseTo(0, 6)
+            for (let i = 1; i < s.length; i++) expect(s[i] - s[i - 1]).toBeLessThanOrEqual(1 + 1e-9)
+          }
+        }
+      }
+    }
+  })
+
+  it('no Diaphragm shear comes in across an Opening on the line', () => {
+    const project = t1()
+    project.levels[0].openings = [{ id: 'stair', xMin: 35, xMax: 45, yMin: 25, yMax: 35 }] // straddles line 2
+    const { s, v } = linesByName(project, 'SY')['2'].collector.force
+    // Wall [0, 20], Opening [25, 35]: nothing goes in or out across the Opening, so F is flat there.
+    expect(v[s.indexOf(25)]).toBeCloseTo(v[s.indexOf(35)], 9)
+    expect(v[v.length - 1]).toBeCloseTo(0, 6)
+  })
+
+  it('warns about a Lateral Element past the end of its line, and clips it', () => {
+    const project = t1()
+    const line2 = project.levels[0].shearLines.find((line) => line.name === '2')!
+    line2.lateralElements[0].end = 60 // the line is 50 ft long
+    const results = analyze(project)
+    expect(results.warnings).toEqual([expect.objectContaining({ code: 'element-off-line', refId: 'roof-2-e1' })])
+    expect(linesByName(project, 'SY')['2'].elements[0].unitShear).toBeCloseTo(260, 6) // 13.0 k over 50 ft
+  })
+
+  it('warns about a Shear Line with no Lateral Elements, and draws no Collector for it', () => {
+    const project = t1()
+    project.levels[0].shearLines.find((line) => line.name === '2')!.lateralElements = []
+    const results = analyze(project)
+    expect(results.warnings).toEqual([expect.objectContaining({ code: 'line-without-elements', refId: 'roof-2' })])
+    expect(linesByName(project, 'SY')['2'].collector.maxForce).toBe(0)
   })
 })
 

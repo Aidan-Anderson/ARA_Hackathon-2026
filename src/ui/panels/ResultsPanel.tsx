@@ -1,5 +1,6 @@
 // Track A: results tables for the current Level and Load Case, or the Envelope (spec §6.5).
-// So far: Level forces with F_px, Shear Lines, Diaphragm Spans. Later tickets add elements, Collectors, ASD.
+// So far: Level forces with F_px, Shear Lines, Lateral Elements, Collectors, Diaphragm Spans,
+// Re-entrant Corners. Later tickets add wind, ASD, the Envelope, and Transfers.
 
 import type { Level } from '../../model/project'
 import { LOAD_CASES, type CaseResult, type FpxResult } from '../../model/results'
@@ -131,6 +132,64 @@ function LevelTables({ level, caseResult }: { level: Level; caseResult: CaseResu
             </tr>
           </tfoot>
         </table>
+      )}
+
+      {levelResult.lines.length > 0 && (
+        <>
+          <h3>Lateral Elements (story shear at F_x)</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Line</th>
+                <th>Element</th>
+                <th>Length</th>
+                <th>Force</th>
+                <th>v</th>
+              </tr>
+            </thead>
+            <tbody>
+              {levelResult.lines.flatMap((l) =>
+                l.elements.map((demand) => {
+                  const element = line(l.lineId)?.lateralElements.find((e) => e.id === demand.elementId)
+                  return (
+                    <tr key={demand.elementId}>
+                      <td>{line(l.lineId)?.name}</td>
+                      <td>
+                        {element?.kind === 'bracedFrame' ? 'Frame' : 'Wall'}{' '}
+                        <span className="muted">
+                          {element?.start}–{element?.end}
+                        </span>
+                      </td>
+                      <td>{feet(element ? element.end - element.start : 0)}</td>
+                      <td>{kips(demand.force)}</td>
+                      <td>{plf(demand.unitShear)}</td>
+                    </tr>
+                  )
+                }),
+              )}
+            </tbody>
+          </table>
+
+          <h3>Collectors (at F_px)</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Line</th>
+                <th>Length</th>
+                <th>max Collector force</th>
+              </tr>
+            </thead>
+            <tbody>
+              {levelResult.lines.map((l) => (
+                <tr key={l.lineId}>
+                  <td>{line(l.lineId)?.name}</td>
+                  <td>{feet(l.length)}</td>
+                  <td>{kips(l.collector.maxForce)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
 
       {levelResult.spans.length > 0 && (

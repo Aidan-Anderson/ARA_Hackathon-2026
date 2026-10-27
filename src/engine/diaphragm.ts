@@ -2,7 +2,8 @@
 
 import type { Axis, Level, ShearLine } from '../model/project'
 import type { CornerResult, SpanResult } from '../model/results'
-import { cantilever, maxAbs, simpleBeam, type Beam, type BeamLoads } from './beam'
+import { cantilever, simpleBeam, type Beam, type BeamLoads } from './beam'
+import { maxAbs } from './math'
 import { depthAt, type DepthPiece, type ReentrantVertex, type Sections } from './sections'
 
 /** Shorter than this, an Overhang is just drawing noise. */

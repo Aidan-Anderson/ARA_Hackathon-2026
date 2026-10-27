@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { cantilever, maxAbs, simpleBeam } from './beam'
+import { cantilever, simpleBeam } from './beam'
+import { maxAbs } from './math'
 
 describe('simpleBeam', () => {
   it('splits a uniform load equally: wL/2 each end, wL²/8 at midspan', () => {

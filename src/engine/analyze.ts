@@ -1,4 +1,3 @@
-import { crossSection } from '../model/geometry'
 import type { Axis, Level, Project, ShearLine } from '../model/project'
 import {
   LOAD_CASES,
@@ -8,9 +7,10 @@ import {
   type LoadCaseId,
   type Results,
 } from '../model/results'
+import { elementDemands, lineCollector } from './collectors'
 import { areaLoad, diaphragmReactions, diaphragmSpans, shearLinesIn, type DiaphragmSpans } from './diaphragm'
 import { levelForces, type LevelForces } from './forces'
-import { extentOf, levelSections, reentrantVertices } from './sections'
+import { cutAt, extentOf, levelSections, reentrantVertices } from './sections'
 import { levelWarnings } from './validate'
 
 const SEISMIC_CASES: LoadCaseId[] = ['SX', 'SY']
@@ -18,7 +18,8 @@ const SEISMIC_CASES: LoadCaseId[] = ['SX', 'SY']
 /**
  * The engine's only entry point (docs/spec.md §4.1, §5).
  * So far: seismic F_x and F_px runs on each Level, with L/T shapes, Openings, Overhangs,
- * Re-entrant Corners, and validation. Story shear, Collectors, and wind arrive in later tickets.
+ * Re-entrant Corners, Lateral Elements, Collectors, and validation. Story shear across Levels
+ * and wind arrive in later tickets.
  */
 export function analyze(project: Project): Results {
   const warnings = project.levels.flatMap(levelWarnings)
@@ -73,17 +74,18 @@ function analyzeSeismicLevel(level: Level, direction: Axis, forces: LevelForces)
 }
 
 function lineResult(line: ShearLine, level: Level, i: number, reactionFx: number, fpxRun: DiaphragmSpans): LineResult {
-  const section = crossSection(level.outline, line.direction, line.position)
+  const cut = cutAt(level, line.direction, line.position)
+  const storyShear = reactionFx // A4.1 accumulates Levels above
   return {
     lineId: line.id,
-    length: section ? section[1] - section[0] : 0,
+    length: cut ? cut.section[1] - cut.section[0] : 0,
     reactionFx,
     reactionFpx: fpxRun.reactions[i],
-    storyShear: reactionFx, // A4.1 accumulates Levels above
+    storyShear,
     unitShearLeft: fpxRun.unitShearLeft[i],
     unitShearRight: fpxRun.unitShearRight[i],
-    elements: [], // A3.1
-    collector: { force: { s: [], v: [] }, maxForce: 0 }, // A3.1
+    elements: cut ? elementDemands(line, cut.section, storyShear) : [],
+    collector: cut ? lineCollector(line, cut, fpxRun.reactions[i]) : { force: { s: [], v: [] }, maxForce: 0 },
     continuesBelow: true, // A4.1
   }
 }

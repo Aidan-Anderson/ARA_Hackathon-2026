@@ -2,6 +2,8 @@
 // s is the absolute coordinate along the span axis (ft). Loads act in the load direction;
 // reactions are positive against the load. Units: ft, kips, kip-ft.
 
+import { EPS, uniqueSorted } from './math'
+
 /** w kips/ft over [from, to]. */
 export interface UniformLoad {
   from: number
@@ -42,8 +44,6 @@ export interface Beam {
    */
   stations(maxStep?: number, extraBreaks?: number[]): Stations
 }
-
-const EPS = 1e-9
 
 /** A simply supported beam over [start, end]. Loads outside the span are ignored. */
 export function simpleBeam(start: number, end: number, loads: BeamLoads): Beam {
@@ -152,13 +152,4 @@ function beam(
 /** Length of a uniform load that lies left of s. */
 function loadedLength(load: UniformLoad, s: number): number {
   return Math.max(0, Math.min(load.to, s) - load.from)
-}
-
-function uniqueSorted(values: number[]): number[] {
-  const sorted = [...values].sort((a, b) => a - b)
-  return sorted.filter((value, i) => i === 0 || value - sorted[i - 1] > EPS)
-}
-
-export function maxAbs(values: number[]): number {
-  return values.reduce((max, value) => Math.max(max, Math.abs(value)), 0)
 }

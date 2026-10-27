@@ -74,11 +74,11 @@ src/
   model/            ← SHARED. Changing types here needs a quick check with each other
     project.ts        Plan model types (section 4.3)
     results.ts        Results types (section 4.4)
-    ui.ts             Selection and app-state types
-    defaults.ts       createDefaultProject() (= fixture T1), new ids
+    ui.ts             Selection, CaseView, AppViewProps (props every component gets), currentLevel()
+    defaults.ts       createDefaultProject() (= fixture T1), newId()
     geometry.ts       crossSection(outline, direction, position): [lo, hi] | null (used by both tracks)
     outline.ts        checkOutline(outline): { ok: true } | { ok: false; message } (section 5.13)
-    fixtures/         T1–T7 test projects (section 7.2), plain TS objects
+    fixtures/         T1–T7 test projects (section 7.2): functions t1(), t2(), … that return a fresh Project; allFixtures
   engine/           ← Track A (Hamid). Pure functions, no React, no DOM
     analyze.ts        analyze(project): Results — the only entry point the UI calls
     sections.ts       cross-sections, depth, net depth, breakpoints
@@ -116,8 +116,7 @@ const results = useMemo(() => analyze(project), [project]);
 ```
 
 - Every edit creates a new `project` object (immutable updates). `analyze` reruns on each change. It must stay fast: under 50 ms for the demo project.
-- Track B components receive `project`, `setProject`, `levelId`, `caseId`, `results`, and `selection`/`setSelection`.
-- Track A panels receive `project`, `results`, `levelId`, `caseId`, and `selection`/`setSelection`.
+- Every component receives the same `AppViewProps` (`src/model/ui.ts`): all of the state above plus its setters. Components use what they need. `currentLevel(project, levelId)` gives the Level on the plan, falling back to the top Level if `levelId` is stale.
 
 ### 4.3 Plan model: `src/model/project.ts`
 
@@ -214,6 +213,16 @@ export type Selection =
   | { kind: 'opening'; levelId: string; id: string }
   | { kind: 'transfer'; levelId: string; fromLineId: string } // levelId = the Level that receives it
   | null;
+
+export type CaseView = LoadCaseId | 'ENV';
+
+/** Everything App.tsx passes to each component (state from §4.2 plus setters). */
+export interface AppViewProps {
+  project; setProject; results; levelId; setLevelId; caseId: CaseView; setCaseId;
+  showAsd; setShowAsd; selection; setSelection;
+}
+
+export function currentLevel(project: Project, levelId: string): Level;  // falls back to the top Level
 ```
 
 ### 4.4 Results: `src/model/results.ts`
@@ -223,6 +232,10 @@ All values are **strength level**, without ρ or Ω₀. The UI multiplies by
 
 ```ts
 export type LoadCaseId = 'SX' | 'SY' | 'WX' | 'WY';
+
+/** Labels, directions, and ASD factors for pickers and tables. */
+export const LOAD_CASES: readonly { id: LoadCaseId; label: string; direction: Axis; asdFactor: number }[];
+// SX 'Seismic X' X 0.7 · SY 'Seismic Y' Y 0.7 · WX 'Wind X' X 0.6 · WY 'Wind Y' Y 0.6
 
 export interface Results {
   cases: Record<LoadCaseId, CaseResult>;
@@ -709,8 +722,8 @@ Uses research section 3, formulas B1–B6:
 
 **T6 — validation**
 
-- U outline (0,0) (60,0) (60,50) (40,50) (40,20) (20,20) (20,50) (0,50) → `outline-invalid`.
-- T1 with only line "1" in Y → `too-few-lines`, and SY has no spans.
+- **T6:** U outline (0,0) (60,0) (60,50) (40,50) (40,20) (20,20) (20,50) (0,50) → `outline-invalid`.
+- **T6b:** T1 with only line "1" in Y → `too-few-lines`, and SY has no spans.
 
 **T7 — Overhang**
 

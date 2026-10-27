@@ -1,0 +1,84 @@
+.app {
+  display: grid;
+  grid-template-columns: 1fr 400px;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    'toolbar toolbar'
+    'plan side'
+    'warnings warnings';
+  height: 100vh;
+}
+
+.app-toolbar {
+  grid-area: toolbar;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.app-plan {
+  grid-area: plan;
+  position: relative;
+  overflow: hidden;
+  background: #f6f8fa;
+}
+
+.app-side {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid #d0d7de;
+}
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.tab {
+  flex: 1;
+  padding: 0.5rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tab.active {
+  border-bottom-color: #0969da;
+  font-weight: 600;
+}
+
+.tab-body {
+  flex: 1;
+  overflow: auto;
+  padding: 0.75rem;
+}
+
+.app-warnings {
+  grid-area: warnings;
+  padding: 0.25rem 0.75rem;
+  border-top: 1px solid #d0d7de;
+  font-size: 0.875rem;
+}
+
+.placeholder {
+  color: #656d76;
+}
+
+.placeholder h2 {
+  margin: 0 0 0.25rem;
+  color: #1f2328;
+  font-size: 1rem;
+}
+
+.placeholder p {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.app-plan .placeholder,
+.app-side .placeholder {
+  padding: 1rem;
+}

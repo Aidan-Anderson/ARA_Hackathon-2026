@@ -2,7 +2,7 @@
 
 import { newId } from '../../model/defaults'
 import { crossSection } from '../../model/geometry'
-import type { Axis, Grid, LateralElement, Level, Point, Project } from '../../model/project'
+import type { Axis, Grid, LateralElement, Level, Point, Project, Underlay } from '../../model/project'
 import type { Hit } from './hitTest'
 
 /** Openings smaller than this in either direction (after clipping) are ignored. */
@@ -126,4 +126,9 @@ export function moveShearLine(
       return { ...line, position, name: gridline?.label ?? line.name }
     }),
   }))
+}
+
+/** Set, replace, or (with undefined) remove a Level's Underlay (B5.1). */
+export function setUnderlay(project: Project, levelId: string, underlay: Underlay | undefined): Project {
+  return updateLevel(project, levelId, ({ underlay: _old, ...level }) => (underlay ? { ...level, underlay } : level))
 }

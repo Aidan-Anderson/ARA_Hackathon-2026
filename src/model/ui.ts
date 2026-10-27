@@ -7,7 +7,7 @@ import type { LoadCaseId, Results } from './results'
 /** How the plan is built (spec §6.2): on the Grid, by drawing, or by tracing an imported Underlay. */
 export type EditorMode = 'grid' | 'draw' | 'import'
 
-export type EditorTool = 'select' | 'outline' | 'shearLine' | 'element' | 'opening' | 'delete'
+export type EditorTool = 'select' | 'outline' | 'shearLine' | 'element' | 'opening' | 'delete' | 'calibrate'
 
 /** Plan editor state that the Toolbar sets and the PlanView uses. Not saved with the project. */
 export interface EditorState {
@@ -19,6 +19,8 @@ export interface EditorState {
   elementKind: LateralElement['kind']
   /** Results overlay layers (B3.2) and the ghost of the Level below (B4.1). */
   layers: { labels: boolean; collectors: boolean; diagrams: boolean; ghost: boolean }
+  /** While false, the Select tool can drag the Underlay to align it (B5.1). */
+  underlayLocked: boolean
 }
 
 export const DEFAULT_EDITOR: EditorState = {
@@ -27,6 +29,7 @@ export const DEFAULT_EDITOR: EditorState = {
   lineDirection: 'Y',
   elementKind: 'shearWall',
   layers: { labels: true, collectors: true, diagrams: true, ghost: true },
+  underlayLocked: false,
 }
 
 export type Selection =

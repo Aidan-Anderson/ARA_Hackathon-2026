@@ -4,14 +4,16 @@
 
 import { useEffect, useRef, useState, type PointerEvent, type WheelEvent } from 'react'
 import { checkOutline } from '../../model/outline'
-import type { Level, Point, Project } from '../../model/project'
+import type { Level, Point, Project, Underlay } from '../../model/project'
 import { currentLevel, type AppViewProps, type EditorState, type Selection } from '../../model/ui'
+import { calibrateUnderlay, insideUnderlay, moveUnderlay, underlayBounds } from '../io/underlay'
 import { sameSelection } from '../panels/selection'
-import { addElement, addOpening, addShearLine, moveShearLine, removeItem, setOutline } from './edit'
+import { addElement, addOpening, addShearLine, moveShearLine, removeItem, setOutline, setUnderlay } from './edit'
 import { GhostLayer } from './GhostLayer'
 import { gridlines, nearestGridline, type Gridline } from './grid'
 import { hitTest, type Hit } from './hitTest'
 import {
+  CalibrationLayer,
   DraftLayer,
   ElementPreview,
   GridLayer,
@@ -21,6 +23,7 @@ import {
   PlanDefs,
   RectPreview,
   ShearLineLayer,
+  UnderlayLayer,
 } from './layers'
 import { levelBelow } from './levels'
 import {
@@ -45,7 +48,7 @@ const CLICK_SLOP_PX = 4
 const SNAP_PX = 10
 
 type Drag = {
-  kind: 'pan' | 'click' | 'rect' | 'element' | 'moveLine'
+  kind: 'pan' | 'click' | 'rect' | 'element' | 'moveLine' | 'underlay'
   x: number
   y: number
   start: Viewport
@@ -58,6 +61,8 @@ type Drag = {
   along?: number
   /** What a Select press landed on, selected if the press turns out to be a click. */
   hit?: Hit
+  /** The Underlay as it was when a drag to align it started. */
+  underlay?: Underlay
 }
 
 /** An outline being drawn, tied to the Level it was started on. */
@@ -69,8 +74,18 @@ function toSelection(hit: Hit, levelId: string): Selection {
     : { kind: hit.kind, levelId, id: hit.id }
 }
 
-function hint(editor: EditorState, drafting: boolean): string {
-  if (editor.tool === 'select') return 'Click to select; drag a Shear Line to move it; drag elsewhere to pan; scroll to zoom.'
+function hint(editor: EditorState, drafting: boolean, level: Level, calibrationPoints: number): string {
+  if (editor.tool === 'select') {
+    return level.underlay && !editor.underlayLocked
+      ? 'Drag the drawing to align it, then tick Lock. Click to select; drag a Shear Line to move it.'
+      : 'Click to select; drag a Shear Line to move it; drag elsewhere to pan; scroll to zoom.'
+  }
+  if (editor.tool === 'calibrate') {
+    if (!level.underlay) return 'Import a drawing first (Import mode).'
+    return calibrationPoints === 0
+      ? 'Calibrate: click the first of two points a known distance apart on the drawing.'
+      : 'Calibrate: click the second point, then type the real distance.'
+  }
   if (editor.tool === 'element') {
     return `Drag along a Shear Line to add a ${editor.elementKind === 'bracedFrame' ? 'braced frame' : 'shear wall'}.`
   }
@@ -99,6 +114,7 @@ export function PlanView({
   editor,
   selection,
   setSelection,
+  setEditor,
 }: AppViewProps) {
   const level = currentLevel(project, levelId)
   const below = levelBelow(project, level.id)
@@ -114,6 +130,8 @@ export function PlanView({
   const [draft, setDraft] = useState<Draft | null>(null)
   const [rect, setRect] = useState<{ a: Point; b: Point } | null>(null)
   const [newElement, setNewElement] = useState<{ lineId: string; a: number; b: number } | null>(null)
+  const [calibration, setCalibration] = useState<{ levelId: string; points: Point[] }>({ levelId: '', points: [] })
+  const calibrationPoints = editor.tool === 'calibrate' && calibration.levelId === level.id ? calibration.points : []
   const drag = useRef<Drag | null>(null)
 
   // A draft only counts on the Level and tool it was started with.
@@ -191,6 +209,15 @@ export function PlanView({
       setNewElement({ lineId: line.id, a: along, b: along })
     } else if (editor.tool === 'select' && under) {
       drag.current = { kind: 'moveLine', ...base, lineId: under.lineId, hit: under.hit }
+    } else if (
+      event.button === 0 &&
+      editor.tool === 'select' &&
+      level.underlay &&
+      !editor.underlayLocked &&
+      insideUnderlay(level.underlay, at)
+    ) {
+      drag.current = { kind: 'underlay', ...base, anchor: at, underlay: level.underlay }
+      setUserViewport(v) // hold the view still while the drawing moves
     } else {
       const pan = event.button === 1 || (event.button === 0 && editor.tool === 'select')
       drag.current = { kind: pan ? 'pan' : 'click', ...base }
@@ -210,6 +237,10 @@ export function PlanView({
     if (d.kind === 'rect' && d.anchor) setRect({ a: d.anchor, b: snapPoint(at, snap) })
     if (d.kind === 'element' && line && d.along !== undefined) {
       setNewElement({ lineId: line.id, a: d.along, b: snapAlong(line.direction, at, snap) })
+    }
+    if (d.kind === 'underlay' && d.moved && d.anchor && d.underlay) {
+      const moved = moveUnderlay(d.underlay, at.x - d.anchor.x, at.y - d.anchor.y)
+      setProject((p) => setUnderlay(p, level.id, moved))
     }
     if (d.kind === 'moveLine' && d.moved && line) {
       // Results update live as the line moves.
@@ -243,6 +274,7 @@ export function PlanView({
       if (!d.moved && d.hit) setSelection(toSelection(d.hit, level.id))
       return
     }
+    if (d.kind === 'underlay' && d.moved) return
     if (!d.moved) click(at)
   }
 
@@ -267,6 +299,16 @@ export function PlanView({
         const position = snapLinePosition(at, direction, snap)
         setProject((p) => addShearLine(p, level.id, { name: drawnLineName(direction, position), direction, position }, editor.elementKind))
       }
+    } else if (editor.tool === 'calibrate') {
+      if (!level.underlay) return
+      if (calibrationPoints.length === 0) return setCalibration({ levelId: level.id, points: [at] })
+      setCalibration({ levelId: level.id, points: [] })
+      const distance = Number(window.prompt('Real distance between the two points (ft):', '') ?? '')
+      const calibrated = calibrateUnderlay(level.underlay, calibrationPoints[0], at, distance)
+      if (!calibrated) return
+      setProject((p) => setUnderlay(p, level.id, calibrated))
+      setUserViewport(null) // refit to the rescaled drawing
+      setEditor((e) => ({ ...e, tool: 'select' }))
     } else if (editor.tool === 'outline') {
       if (closable(at)) return finishOutline(drafting!)
       const corner = nextVertex(drafting?.at(-1) ?? null, at, snap)
@@ -297,6 +339,7 @@ export function PlanView({
         onWheel={onWheel}
       >
         <PlanDefs />
+        {level.underlay && <UnderlayLayer underlay={level.underlay} v={v} />}
         <GridLayer lines={lines} v={v} bounds={bounds} highlight={gridTarget(hover)} />
         <OutlineLayer level={level} v={v} />
         <OpeningLayer level={level} v={v} selection={selection} />
@@ -313,6 +356,7 @@ export function PlanView({
           bounds={bounds}
         />
         {rect && <RectPreview a={rect.a} b={rect.b} v={v} />}
+        {editor.tool === 'calibrate' && <CalibrationLayer points={calibrationPoints} hover={hover} v={v} />}
         {newElement && (
           <ElementPreview
             line={level.shearLines.find((l) => l.id === newElement.lineId)}
@@ -343,15 +387,17 @@ export function PlanView({
       </div>
       <div className="plan-status">
         {hover ? `x ${hover.x.toFixed(1)}, y ${hover.y.toFixed(1)} ft · ` : ''}
-        {level.name} · {hint(editor, !!drafting)}
+        {level.name} · {hint(editor, !!drafting, level, calibrationPoints.length)}
       </div>
     </div>
   )
 }
 
-/** What Fit shows: the Level's outline and the whole Grid. */
+/** What Fit shows: the Level's outline, the whole Grid, and the Underlay. */
 function planBounds(project: Project, level: Level): Bounds {
   const width = project.grid.xSpacings.reduce((sum, s) => sum + s, 0)
   const depth = project.grid.ySpacings.reduce((sum, s) => sum + s, 0)
-  return boundsOf([...level.outline, { x: 0, y: 0 }, { x: width, y: depth }])!
+  const underlay = level.underlay ? underlayBounds(level.underlay) : null
+  const underlayCorners = underlay ? [{ x: underlay.xMin, y: underlay.yMin }, { x: underlay.xMax, y: underlay.yMax }] : []
+  return boundsOf([...level.outline, { x: 0, y: 0 }, { x: width, y: depth }, ...underlayCorners])!
 }

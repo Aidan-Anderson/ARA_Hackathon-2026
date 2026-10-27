@@ -1,7 +1,7 @@
 # Demo script (2 minutes)
 
 Follows the checklist in [problem.md §5](../problem.md#5-what-done-looks-like-the-demo).
-Skip any step marked _(if merged)_ whose ticket did not make it to `main` (only the Underlay import, B5.1, is still open).
+Every ticket is merged, so every step below should work.
 
 ## Before you start
 
@@ -28,7 +28,7 @@ Building: S_DS 1.0, I_e 1.0, wind 200 plf (X) and 250 plf (Y), ρ 1.0, Ω₀ 3.0
 | Time | Do | Say |
 |---|---|---|
 | 0:00 | **Load** → `demo-project.json` | "Lateral load path for flexible diaphragms. Here's a two-story L-shaped building." |
-| 0:10 | Point at the Gridlines and the L outline. _(if merged)_ Import mode: show the Underlay. | "Plan on a grid; the outline is drawn on top, or traced from an imported drawing." |
+| 0:10 | Point at the Gridlines and the L outline. Import mode → **Import image or PDF…** → the PNG floor plan (set up the Underlay in rehearsal; calibrate with two clicks and a distance). | "Plan on a grid; the outline is drawn on top, or traced from an imported drawing." |
 | 0:20 | Level picker → **Roof**. Toggle **Ghost**. | "The Roof was made with '+ Level', a copy of Level 2. The ghost shows Level 2 underneath, so you can see line 3 has nothing below it." |
 | 0:30 | **Loads** tab: point at S_DS, I_e, wind, F_x, weight | "Inputs are building-wide loads plus F_x and weight per Level." |
 | 0:40 | **Results** tab, case **SY**, Roof | "Simple-beam Diaphragm Reactions per span, shear and unit shear, and F_px with its min/max." |
@@ -46,5 +46,6 @@ _(if time)_ **Code calc** tab: look up S_DS from the site and fill F_x and F_px.
 ## Rehearsal
 
 - [ ] `demo/demo-project.json` loads cleanly on the demo laptop
-- [ ] Every step above is visible (strike the ones that aren't merged)
+- [ ] Every step above is visible on this laptop
+- [ ] The PNG floor plan imports and calibrates (and a PDF, if you'll show one)
 - [ ] Timed run-through: ____ (target ≤ 2:00)

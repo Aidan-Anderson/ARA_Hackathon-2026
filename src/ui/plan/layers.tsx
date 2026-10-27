@@ -1,7 +1,8 @@
 // Track B: SVG layers of the plan view (spec §6.2), drawn in screen coordinates so text stays upright.
 
-import type { Axis, LateralElement, Level, Point, ShearLine } from '../../model/project'
+import type { Axis, LateralElement, Level, Point, ShearLine, Underlay } from '../../model/project'
 import type { Selection } from '../../model/ui'
+import { underlayBounds } from '../io/underlay'
 import type { Gridline } from './grid'
 import { alongLine, lineExtent } from './lineGeometry'
 import { toScreen, type Bounds, type Viewport } from './viewport'
@@ -206,4 +207,37 @@ export function ElementPreview({
   const start = toScreen(v, alongLine(line, a))
   const end = toScreen(v, alongLine(line, b))
   return <line className={`element-preview ${kind}`} x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
+}
+
+/** The imported drawing (B5.1), the bottom layer of the Level. */
+export function UnderlayLayer({ underlay, v }: { underlay: Underlay; v: Viewport }) {
+  const extent = underlayBounds(underlay)
+  const topLeft = toScreen(v, { x: extent.xMin, y: extent.yMax })
+  const bottomRight = toScreen(v, { x: extent.xMax, y: extent.yMin })
+  return (
+    <image
+      className="underlay"
+      href={underlay.dataUrl}
+      x={topLeft.x}
+      y={topLeft.y}
+      width={bottomRight.x - topLeft.x}
+      height={bottomRight.y - topLeft.y}
+      opacity={underlay.opacity}
+      preserveAspectRatio="none"
+    />
+  )
+}
+
+/** Calibration (B5.1): the points clicked so far, and a line to the cursor. */
+export function CalibrationLayer({ points, hover, v }: { points: Point[]; hover: Point | null; v: Viewport }) {
+  const placed = points.map((p) => toScreen(v, p))
+  const cursor = hover ? toScreen(v, hover) : null
+  return (
+    <g className="calibration">
+      {placed[0] && cursor && <line className="calibration-line" x1={placed[0].x} y1={placed[0].y} x2={cursor.x} y2={cursor.y} />}
+      {placed.map((p, i) => (
+        <circle key={i} className="calibration-point" cx={p.x} cy={p.y} r={5} />
+      ))}
+    </g>
+  )
 }

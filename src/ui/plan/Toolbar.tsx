@@ -1,9 +1,10 @@
-// Track B: plan editor controls (spec §6.1): mode and tool. Later tickets add the drawing options
-// (B2.1), Load Case picker and Strength/ASD (B3.2), and the Level picker (B4.1).
+// Track B: plan editor controls (spec §6.1): mode, tool and its options, the Underlay controls in
+// Import mode, Load Case, Strength/ASD, and overlay layers. The Level picker is LevelPicker.tsx.
 
 import type { Axis, LateralElement } from '../../model/project'
 import { LOAD_CASES } from '../../model/results'
 import type { AppViewProps, CaseView, EditorMode, EditorState, EditorTool } from '../../model/ui'
+import { UnderlayControls } from '../io/UnderlayControls'
 import './Toolbar.css'
 
 const CASES: { id: CaseView; label: string; title: string }[] = [
@@ -47,18 +48,12 @@ const DIRECTIONS: { id: Axis; label: string }[] = [
   { id: 'Y', label: 'Y' },
 ]
 
-/** Modes that work so far; the rest show as disabled. */
-const READY_MODES: EditorMode[] = ['grid', 'draw']
-
-export function Toolbar({ editor, setEditor, caseId, setCaseId, showAsd, setShowAsd }: AppViewProps) {
+export function Toolbar(props: AppViewProps) {
+  const { editor, setEditor, caseId, setCaseId, showAsd, setShowAsd } = props
   return (
     <div className="toolbar">
-      <Segmented
-        label="Mode"
-        options={MODES.map((mode) => ({ ...mode, disabled: !READY_MODES.includes(mode.id) }))}
-        value={editor.mode}
-        onChange={(mode) => setEditor((e) => ({ ...e, mode }))}
-      />
+      <Segmented label="Mode" options={MODES} value={editor.mode} onChange={(mode) => setEditor((e) => ({ ...e, mode }))} />
+      {editor.mode === 'import' && <UnderlayControls {...props} />}
       <Segmented label="Tool" options={TOOLS} value={editor.tool} onChange={(tool) => setEditor((e) => ({ ...e, tool }))} />
       {editor.tool === 'shearLine' && editor.mode !== 'grid' && (
         <Segmented

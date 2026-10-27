@@ -264,3 +264,20 @@
 .chord-label {
   fill: #1a7f37;
 }
+
+/* Underlay (B5.1) */
+.underlay {
+  pointer-events: none;
+}
+
+.calibration-line {
+  stroke: #bf3989;
+  stroke-width: 2;
+  stroke-dasharray: 5 3;
+}
+
+.calibration-point {
+  fill: #ffffff;
+  stroke: #bf3989;
+  stroke-width: 2.5;
+}

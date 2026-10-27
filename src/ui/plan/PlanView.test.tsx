@@ -58,11 +58,11 @@ describe('PlanView drawing (B2.1)', () => {
 })
 
 describe('Toolbar', () => {
-  it('offers the modes and tools, with modes that aren’t built yet disabled', () => {
+  it('offers the modes and tools', () => {
     const html = plainHtml(renderToString(<Toolbar {...viewProps(t1())} />))
     expect(html).toContain('aria-pressed="true">Grid<')
     expect(html).toContain('aria-pressed="false">Draw<')
-    expect(html).toContain('disabled="" aria-pressed="false">Import<')
+    expect(html).toContain('aria-pressed="false">Import<')
     expect(html).toContain('>Outline<')
     expect(html).toContain('>Shear Line<')
   })

@@ -2,9 +2,14 @@
 
 import { analyze } from '../../engine/analyze'
 import type { Project } from '../../model/project'
-import type { AppViewProps, CaseView } from '../../model/ui'
+import type { AppViewProps, CaseView, Selection } from '../../model/ui'
 
-export function viewProps(project: Project, caseId: CaseView = 'SY', levelId = project.levels[0].id): AppViewProps {
+export function viewProps(
+  project: Project,
+  caseId: CaseView = 'SY',
+  levelId = project.levels[0].id,
+  selection: Selection = null,
+): AppViewProps {
   const noop = () => {}
   return {
     project,
@@ -16,7 +21,7 @@ export function viewProps(project: Project, caseId: CaseView = 'SY', levelId = p
     setCaseId: noop,
     showAsd: false,
     setShowAsd: noop,
-    selection: null,
+    selection,
     setSelection: noop,
   }
 }

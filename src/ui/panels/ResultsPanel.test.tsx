@@ -65,6 +65,13 @@ describe('ResultsPanel', () => {
     for (const reaction of ['10.40', '26.00', '15.60', '52.00']) expect(html).toContain(`${reaction}<span class="asd">`)
   })
 
+  it('makes rows selectable and highlights the selected one', () => {
+    const selection = { kind: 'shearLine', levelId: 'roof', id: 'roof-2' } as const
+    const html = plainHtml(renderToString(<ResultsPanel {...viewProps(t1(), 'SY', 'roof', selection)} />))
+    expect(html).toContain('class="selectable selected"')
+    expect(html).toContain('class="selectable"')
+  })
+
   it('tags the Roof line that stops (T5)', () => {
     const html = render(t5(), 'SY', 'roof')
     expect(html).toContain('stops ↓')

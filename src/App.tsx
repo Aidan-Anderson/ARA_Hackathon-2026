@@ -27,6 +27,13 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('Results')
   const results = useMemo(() => analyze(project), [project])
 
+  // Selecting an element (a Results row, or the plan) opens its details.
+  const select: AppViewProps['setSelection'] = (next) => {
+    const value = typeof next === 'function' ? next(selection) : next
+    setSelection(value)
+    if (value) setTab('Detail')
+  }
+
   const view: AppViewProps = {
     project,
     setProject,
@@ -38,7 +45,7 @@ export default function App() {
     showAsd,
     setShowAsd,
     selection,
-    setSelection,
+    setSelection: select,
   }
 
   return (

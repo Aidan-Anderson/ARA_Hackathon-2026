@@ -1,10 +1,15 @@
 // Track A: results tables for the current Level and Load Case, or the Envelope (spec §6.5).
-// Every Demand shows strength with ASD (× asdFactor) beneath it.
+// Every Demand shows strength with ASD (× asdFactor) beneath it. Clicking a row selects the
+// element for the Detail panel.
 
 import type { Level, Project } from '../../model/project'
 import { LOAD_CASES, type CaseResult, type EnvelopeEntry, type FpxResult, type Results } from '../../model/results'
-import { currentLevel, type AppViewProps, type CaseView } from '../../model/ui'
+import { currentLevel, type AppViewProps, type CaseView, type Selection } from '../../model/ui'
+import { Demand } from './Demand'
+import { selectableRow } from './selection'
 import './ResultsPanel.css'
+
+type Selecting = Pick<AppViewProps, 'selection' | 'setSelection'>
 
 const CASE_VIEWS: { id: CaseView; label: string }[] = [
   ...LOAD_CASES.map(({ id, label }) => ({ id, label })),
@@ -18,8 +23,9 @@ const GOVERNS_LABEL: Record<FpxResult['governs'], string> = {
   fx: 'F_x',
 }
 
-export function ResultsPanel({ project, results, levelId, caseId, setCaseId }: AppViewProps) {
+export function ResultsPanel({ project, results, levelId, caseId, setCaseId, selection, setSelection }: AppViewProps) {
   const level = currentLevel(project, levelId)
+  const selecting: Selecting = { selection, setSelection }
   const outlineError = results.warnings.find((w) => w.code === 'outline-invalid' && w.levelId === level.id)
   return (
     <div className="results">
@@ -33,25 +39,25 @@ export function ResultsPanel({ project, results, levelId, caseId, setCaseId }: A
       {outlineError ? (
         <p className="results-error">{outlineError.message}</p>
       ) : caseId === 'ENV' ? (
-        <EnvelopeTable project={project} level={level} results={results} />
+        <EnvelopeTable project={project} level={level} results={results} selecting={selecting} />
       ) : (
-        <LevelTables levels={project.levels} level={level} caseResult={results.cases[caseId]} />
+        <LevelTables levels={project.levels} level={level} caseResult={results.cases[caseId]} selecting={selecting} />
       )}
     </div>
   )
 }
 
-/** Strength value with its ASD value beneath. */
-function Demand({ value, asd, digits = 2 }: { value: number; asd: number; digits?: number }) {
-  return (
-    <>
-      {value.toFixed(digits)}
-      <span className="asd">{(value * asd).toFixed(digits)}</span>
-    </>
-  )
-}
-
-function LevelTables({ levels, level, caseResult }: { levels: Level[]; level: Level; caseResult: CaseResult }) {
+function LevelTables({
+  levels,
+  level,
+  caseResult,
+  selecting,
+}: {
+  levels: Level[]
+  level: Level
+  caseResult: CaseResult
+  selecting: Selecting
+}) {
   const levelResult = caseResult.levels.find((result) => result.levelId === level.id)
   if (!levelResult) return null
   const asd = caseResult.asdFactor
@@ -129,7 +135,7 @@ function LevelTables({ levels, level, caseResult }: { levels: Level[]; level: Le
           </thead>
           <tbody>
             {levelResult.lines.map((l) => (
-              <tr key={l.lineId}>
+              <tr key={l.lineId} {...selectableRow(selecting, lineSelection(level, l.lineId))}>
                 <td>
                   {line(l.lineId)?.name} <span className="muted">@ {line(l.lineId)?.position}</span>
                   {!l.continuesBelow && <span className="tag">stops ↓</span>}
@@ -193,7 +199,15 @@ function LevelTables({ levels, level, caseResult }: { levels: Level[]; level: Le
                 l.elements.map((demand) => {
                   const element = line(l.lineId)?.lateralElements.find((e) => e.id === demand.elementId)
                   return (
-                    <tr key={demand.elementId}>
+                    <tr
+                      key={demand.elementId}
+                      {...selectableRow(selecting, {
+                        kind: 'lateralElement',
+                        levelId: level.id,
+                        lineId: l.lineId,
+                        id: demand.elementId,
+                      })}
+                    >
                       <td>{line(l.lineId)?.name}</td>
                       <td>
                         {element?.kind === 'bracedFrame' ? 'Frame' : 'Wall'}{' '}
@@ -226,7 +240,7 @@ function LevelTables({ levels, level, caseResult }: { levels: Level[]; level: Le
             </thead>
             <tbody>
               {levelResult.lines.map((l) => (
-                <tr key={l.lineId}>
+                <tr key={l.lineId} {...selectableRow(selecting, lineSelection(level, l.lineId))}>
                   <td>{line(l.lineId)?.name}</td>
                   <td>{l.length.toFixed(1)}</td>
                   <td>
@@ -297,7 +311,10 @@ function LevelTables({ levels, level, caseResult }: { levels: Level[]; level: Le
                 const fromLevel = levels.find((l) => l.id === transfer.fromLevelId)
                 const fromLine = fromLevel?.shearLines.find((l) => l.id === transfer.fromLineId)
                 return (
-                  <tr key={`${transfer.fromLevelId}:${transfer.fromLineId}`}>
+                  <tr
+                    key={`${transfer.fromLevelId}:${transfer.fromLineId}`}
+                    {...selectableRow(selecting, { kind: 'transfer', levelId: level.id, fromLineId: transfer.fromLineId })}
+                  >
                     <td>
                       {fromLevel?.name}, line {fromLine?.name}
                     </td>
@@ -360,7 +377,17 @@ const QUANTITY: Record<EnvelopeEntry['quantity'], { label: string; unit: string;
   chord: { label: 'Chord', unit: 'k', digits: 2 },
 }
 
-function EnvelopeTable({ project, level, results }: { project: Project; level: Level; results: Results }) {
+function EnvelopeTable({
+  project,
+  level,
+  results,
+  selecting,
+}: {
+  project: Project
+  level: Level
+  results: Results
+  selecting: Selecting
+}) {
   const entries = results.envelope
     .filter((entry) => entry.levelId === level.id)
     .sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind))
@@ -385,8 +412,12 @@ function EnvelopeTable({ project, level, results }: { project: Project; level: L
         <tbody>
           {entries.map((entry) => {
             const { label, unit, digits } = QUANTITY[entry.quantity]
+            const target = envelopeSelection(level, entry)
             return (
-              <tr key={`${entry.kind}|${entry.refId}|${entry.quantity}`}>
+              <tr
+                key={`${entry.kind}|${entry.refId}|${entry.quantity}`}
+                {...(target ? selectableRow(selecting, target) : {})}
+              >
                 <td>{envelopeName(project, level, entry)}</td>
                 <td>{label}</td>
                 <td>
@@ -402,6 +433,27 @@ function EnvelopeTable({ project, level, results }: { project: Project; level: L
       </table>
     </>
   )
+}
+
+function lineSelection(level: Level, lineId: string): Selection {
+  return { kind: 'shearLine', levelId: level.id, id: lineId }
+}
+
+/** What an Envelope row selects. Spans have no Detail view, so they select nothing. */
+function envelopeSelection(level: Level, entry: EnvelopeEntry): Selection {
+  switch (entry.kind) {
+    case 'lateralElement': {
+      const line = level.shearLines.find((l) => l.lateralElements.some((e) => e.id === entry.refId))
+      return line ? { kind: 'lateralElement', levelId: level.id, lineId: line.id, id: entry.refId } : null
+    }
+    case 'line':
+    case 'collector':
+      return lineSelection(level, entry.refId)
+    case 'transferCollector':
+      return { kind: 'transfer', levelId: level.id, fromLineId: entry.refId.split(':')[1] }
+    case 'span':
+      return null
+  }
 }
 
 function envelopeName(project: Project, level: Level, entry: EnvelopeEntry): string {

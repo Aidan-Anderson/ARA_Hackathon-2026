@@ -1,12 +1,14 @@
 // Track B: the SVG plan view (spec §6.2). Wheel zooms about the cursor; dragging with Select (or the
 // middle button) pans; Fit resets. Tools turn clicks into edits of the current Level.
 
-import { useRef, useState, type PointerEvent, type WheelEvent } from 'react'
+import { useEffect, useRef, useState, type PointerEvent, type WheelEvent } from 'react'
+import { checkOutline } from '../../model/outline'
 import type { Level, Point, Project } from '../../model/project'
 import { currentLevel, type AppViewProps, type EditorState } from '../../model/ui'
-import { addShearLine } from './edit'
+import { addShearLine, setOutline } from './edit'
 import { gridlines, nearestGridline, type Gridline } from './grid'
-import { GridLayer, OutlineLayer, ShearLineLayer } from './layers'
+import { DraftLayer, GridLayer, LinePreview, OutlineLayer, ShearLineLayer } from './layers'
+import { closeOutline, drawnLineName, nextVertex, snapLinePosition, type SnapContext } from './snap'
 import { useElementSize } from './useElementSize'
 import { boundsOf, fitViewport, toPlan, zoomAt, type Bounds, type Viewport } from './viewport'
 import './PlanView.css'
@@ -15,14 +17,27 @@ import './PlanView.css'
 const DEFAULT_SIZE = { width: 800, height: 600 }
 /** A press that moves less than this is a click, not a drag. */
 const CLICK_SLOP_PX = 4
-/** How close (on screen) a click must be to a Gridline to pick it. */
+/** How close (on screen) the cursor must be to snap to a Gridline or corner. */
 const SNAP_PX = 10
 
 type Drag = { kind: 'pan' | 'click'; x: number; y: number; start: Viewport; moved: boolean }
 
-const HINTS: Partial<Record<EditorState['tool'], string>> = {
-  select: 'Drag to pan, scroll to zoom.',
-  shearLine: 'Click a Gridline to add a Shear Line on it.',
+/** An outline being drawn, tied to the Level it was started on. */
+type Draft = { levelId: string; points: Point[] }
+
+function hint(editor: EditorState, drafting: boolean): string {
+  if (editor.tool === 'select') return 'Drag to pan, scroll to zoom.'
+  if (editor.tool === 'outline') {
+    return drafting
+      ? 'Click the next corner. Click the first corner or press Enter to close; Backspace undoes; Esc cancels.'
+      : 'Click the first corner of the outline.'
+  }
+  if (editor.tool === 'shearLine') {
+    return editor.mode === 'grid'
+      ? 'Click a Gridline to add a Shear Line on it.'
+      : `Click to add a Shear Line in ${editor.lineDirection}.`
+  }
+  return ''
 }
 
 export function PlanView({ project, setProject, levelId, editor, selection }: AppViewProps) {
@@ -34,10 +49,46 @@ export function PlanView({ project, setProject, levelId, editor, selection }: Ap
   const [userViewport, setUserViewport] = useState<Viewport | null>(null)
   const v = userViewport ?? fitViewport(bounds, size.width, size.height)
   const [hover, setHover] = useState<Point | null>(null)
+  const [draft, setDraft] = useState<Draft | null>(null)
   const drag = useRef<Drag | null>(null)
 
+  // A draft only counts on the Level and tool it was started with.
+  const drafting = draft && draft.levelId === level.id && editor.tool === 'outline' ? draft.points : null
+  const tolerance = SNAP_PX / v.scale
+  const snap: SnapContext = {
+    mode: editor.mode,
+    vertices: [...level.outline, ...(drafting ?? [])],
+    gridlines: lines,
+    tolerance,
+  }
+  const outlineCheck = checkOutline(level.outline)
+
   const gridTarget = (at: Point | null): Gridline | null =>
-    at && editor.mode === 'grid' && editor.tool === 'shearLine' ? nearestGridline(lines, at, SNAP_PX / v.scale) : null
+    at && editor.mode === 'grid' && editor.tool === 'shearLine' ? nearestGridline(lines, at, tolerance) : null
+  const closable = (at: Point | null) =>
+    !!drafting && drafting.length >= 3 && !!at && Math.hypot(at.x - drafting[0].x, at.y - drafting[0].y) <= tolerance
+
+  function finishOutline(points: Point[]) {
+    const outline = closeOutline(points)
+    setDraft(null)
+    if (outline.length >= 4) setProject((p: Project) => setOutline(p, level.id, outline))
+  }
+
+  // Keys while drawing: Esc cancels, Enter closes, Backspace removes the last corner.
+  useEffect(() => {
+    if (!drafting) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return
+      if (event.key === 'Escape') setDraft(null)
+      else if (event.key === 'Enter') finishOutline(drafting)
+      else if (event.key === 'Backspace') {
+        event.preventDefault()
+        setDraft(drafting.length > 1 ? { levelId: level.id, points: drafting.slice(0, -1) } : null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   function local(event: { clientX: number; clientY: number; currentTarget: Element }) {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -63,17 +114,31 @@ export function PlanView({ project, setProject, levelId, editor, selection }: Ap
   function onPointerUp(event: PointerEvent<SVGSVGElement>) {
     const d = drag.current
     drag.current = null
-    if (!d || d.moved) return
+    if (!d || d.moved || event.button !== 0) return
     const p = local(event)
     click(toPlan(v, p.x, p.y))
   }
 
   function click(at: Point) {
-    const target = gridTarget(at)
-    if (target) {
-      setProject((p: Project) =>
-        addShearLine(p, level.id, { name: target.label, direction: target.direction, position: target.position }, editor.elementKind),
-      )
+    if (editor.tool === 'shearLine') {
+      if (editor.mode === 'grid') {
+        const target = gridTarget(at)
+        if (target) {
+          setProject((p) =>
+            addShearLine(p, level.id, { name: target.label, direction: target.direction, position: target.position }, editor.elementKind),
+          )
+        }
+      } else {
+        const direction = editor.lineDirection
+        const position = snapLinePosition(at, direction, snap)
+        setProject((p) => addShearLine(p, level.id, { name: drawnLineName(direction, position), direction, position }, editor.elementKind))
+      }
+    } else if (editor.tool === 'outline') {
+      if (closable(at)) return finishOutline(drafting!)
+      const corner = nextVertex(drafting?.at(-1) ?? null, at, snap)
+      const last = drafting?.at(-1)
+      if (last && last.x === corner.x && last.y === corner.y) return // a zero-length edge
+      setDraft({ levelId: level.id, points: [...(drafting ?? []), corner] })
     }
   }
 
@@ -81,6 +146,10 @@ export function PlanView({ project, setProject, levelId, editor, selection }: Ap
     const p = local(event)
     setUserViewport(zoomAt(v, Math.exp(-event.deltaY * 0.0015), p.x, p.y))
   }
+
+  const nextCorner = editor.tool === 'outline' && hover ? (closable(hover) ? drafting![0] : nextVertex(drafting?.at(-1) ?? null, hover, snap)) : null
+  const linePreview =
+    editor.tool === 'shearLine' && editor.mode !== 'grid' && hover ? snapLinePosition(hover, editor.lineDirection, snap) : null
 
   return (
     <div ref={container} className={`plan-view tool-${editor.tool}`}>
@@ -96,7 +165,14 @@ export function PlanView({ project, setProject, levelId, editor, selection }: Ap
         <GridLayer lines={lines} v={v} bounds={bounds} highlight={gridTarget(hover)} />
         <OutlineLayer level={level} v={v} />
         <ShearLineLayer level={level} v={v} bounds={bounds} selection={selection} />
+        {linePreview !== null && <LinePreview direction={editor.lineDirection} position={linePreview} bounds={bounds} v={v} />}
+        {(drafting || nextCorner) && <DraftLayer points={drafting ?? []} next={nextCorner} closable={closable(hover)} v={v} />}
       </svg>
+      {!outlineCheck.ok && (
+        <div className="plan-banner" role="alert">
+          {outlineCheck.message} {level.name} has no results until the outline is fixed.
+        </div>
+      )}
       <div className="plan-controls">
         <button title="Zoom in" onClick={() => setUserViewport(zoomAt(v, 1.25, size.width / 2, size.height / 2))}>
           +
@@ -110,7 +186,7 @@ export function PlanView({ project, setProject, levelId, editor, selection }: Ap
       </div>
       <div className="plan-status">
         {hover ? `x ${hover.x.toFixed(1)}, y ${hover.y.toFixed(1)} ft · ` : ''}
-        {level.name} · {HINTS[editor.tool] ?? ''}
+        {level.name} · {hint(editor, !!drafting)}
       </div>
     </div>
   )

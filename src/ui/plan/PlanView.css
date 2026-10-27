@@ -90,7 +90,44 @@
   stroke-width: 3px;
 }
 
+/* Drawing (B2.1) */
+.draft-path {
+  fill: none;
+  stroke: #0969da;
+  stroke-width: 2;
+  stroke-dasharray: 6 3;
+}
+
+.draft-corner {
+  fill: #ffffff;
+  stroke: #0969da;
+  stroke-width: 2;
+}
+
+.draft-corner.closable {
+  fill: #0969da;
+}
+
+.line-preview {
+  stroke: #0969da;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+}
+
 /* Overlays */
+.plan-banner {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  max-width: calc(100% - 12rem);
+  padding: 0.375rem 0.625rem;
+  border: 1px solid #ffcecb;
+  border-radius: 6px;
+  background: #ffebe9;
+  color: #82071e;
+  font-size: 0.8125rem;
+}
+
 .plan-controls {
   position: absolute;
   top: 8px;

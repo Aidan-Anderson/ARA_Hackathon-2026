@@ -1,6 +1,6 @@
 // Track B: SVG layers of the plan view (spec §6.2), drawn in screen coordinates so text stays upright.
 
-import type { Level } from '../../model/project'
+import type { Axis, Level, Point } from '../../model/project'
 import type { Selection } from '../../model/ui'
 import type { Gridline } from './grid'
 import { alongLine, lineExtent } from './lineGeometry'
@@ -96,4 +96,45 @@ export function ShearLineLayer({
       })}
     </g>
   )
+}
+
+/** The outline being drawn (B2.1): placed corners, a rubber band to the next corner, and the first corner. */
+export function DraftLayer({
+  points,
+  next,
+  closable,
+  v,
+}: {
+  points: Point[]
+  next: Point | null
+  closable: boolean
+  v: Viewport
+}) {
+  const placed = points.map((p) => toScreen(v, p))
+  const rubber = next ? [...placed, toScreen(v, next)] : placed
+  return (
+    <g className="draft-layer">
+      <polyline className="draft-path" points={rubber.map((p) => `${p.x},${p.y}`).join(' ')} />
+      {placed.map((p, i) => (
+        <circle key={i} className={i === 0 && closable ? 'draft-corner closable' : 'draft-corner'} cx={p.x} cy={p.y} r={i === 0 ? 6 : 4} />
+      ))}
+    </g>
+  )
+}
+
+/** Where a Shear Line will go in draw mode (B2.1). */
+export function LinePreview({
+  direction,
+  position,
+  bounds,
+  v,
+}: {
+  direction: Axis
+  position: number
+  bounds: Bounds
+  v: Viewport
+}) {
+  const a = toScreen(v, direction === 'Y' ? { x: position, y: bounds.yMin } : { x: bounds.xMin, y: position })
+  const b = toScreen(v, direction === 'Y' ? { x: position, y: bounds.yMax } : { x: bounds.xMax, y: position })
+  return <line className="line-preview" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
 }

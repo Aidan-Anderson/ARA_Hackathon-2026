@@ -7,6 +7,8 @@ import type { Hit } from './hitTest'
 
 /** Openings smaller than this in either direction (after clipping) are ignored. */
 const MIN_OPENING_FT = 0.5
+/** Lateral Elements shorter than this (after clamping) are ignored. */
+const MIN_ELEMENT_FT = 0.5
 
 /** Two Shear Lines closer than this in the same direction are the same line. */
 const SAME_LINE_FT = 0.01
@@ -78,4 +80,50 @@ export function removeItem(project: Project, levelId: string, hit: Hit): Project
         return { ...level, openings: level.openings.filter((opening) => opening.id !== hit.id) }
     }
   })
+}
+
+/**
+ * Add a Lateral Element on a Shear Line between a and b (any order), clamped to the line's length
+ * (B3.1). Returns the project unchanged if what's left is too short.
+ */
+export function addElement(
+  project: Project,
+  levelId: string,
+  lineId: string,
+  a: number,
+  b: number,
+  kind: LateralElement['kind'],
+): Project {
+  return updateLevel(project, levelId, (level) => ({
+    ...level,
+    shearLines: level.shearLines.map((line) => {
+      if (line.id !== lineId) return line
+      const section = crossSection(level.outline, line.direction, line.position)
+      const start = Math.max(Math.min(a, b), section ? section[0] : -Infinity)
+      const end = Math.min(Math.max(a, b), section ? section[1] : Infinity)
+      if (end - start < MIN_ELEMENT_FT) return line
+      return { ...line, lateralElements: [...line.lateralElements, { id: newId(), kind, start, end }] }
+    }),
+  }))
+}
+
+/**
+ * Move a Shear Line to a new position (B3.1). It keeps its name, unless it lands on a Gridline in its
+ * direction, in which case it takes that Gridline's name.
+ */
+export function moveShearLine(
+  project: Project,
+  levelId: string,
+  lineId: string,
+  position: number,
+  gridlines: { label: string; direction: Axis; position: number }[] = [],
+): Project {
+  return updateLevel(project, levelId, (level) => ({
+    ...level,
+    shearLines: level.shearLines.map((line) => {
+      if (line.id !== lineId) return line
+      const gridline = gridlines.find((g) => g.direction === line.direction && Math.abs(g.position - position) < SAME_LINE_FT)
+      return { ...line, position, name: gridline?.label ?? line.name }
+    }),
+  }))
 }

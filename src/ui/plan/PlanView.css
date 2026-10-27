@@ -181,3 +181,17 @@
   stroke-width: 1.5;
   stroke-dasharray: 4 3;
 }
+
+/* Lateral Element being added (B3.1) */
+.element-preview {
+  stroke-width: 8;
+  stroke-opacity: 0.5;
+}
+
+.element-preview.shearWall {
+  stroke: #8250df;
+}
+
+.element-preview.bracedFrame {
+  stroke: #1a7f37;
+}

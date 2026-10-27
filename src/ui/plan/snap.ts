@@ -58,6 +58,13 @@ export function snapLinePosition(raw: Point, direction: Axis, ctx: SnapContext):
     : snapCoordinate(raw.y, candidates(ctx, 'y'), ctx.tolerance)
 }
 
+/** A position along a Shear Line (y on a Y-line, x on an X-line), snapped like a coordinate. */
+export function snapAlong(direction: Axis, raw: Point, ctx: SnapContext): number {
+  return direction === 'Y'
+    ? snapCoordinate(raw.y, candidates(ctx, 'y'), ctx.tolerance)
+    : snapCoordinate(raw.x, candidates(ctx, 'x'), ctx.tolerance)
+}
+
 /**
  * Finish an outline: add a corner if the last edge doesn't line up with the start, drop repeated and
  * in-line corners, and make it counter-clockwise.

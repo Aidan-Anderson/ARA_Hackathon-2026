@@ -1,7 +1,7 @@
 // Track B: plan editor controls (spec §6.1): mode and tool. Later tickets add the drawing options
 // (B2.1), Load Case picker and Strength/ASD (B3.2), and the Level picker (B4.1).
 
-import type { Axis } from '../../model/project'
+import type { Axis, LateralElement } from '../../model/project'
 import type { AppViewProps, EditorMode, EditorTool } from '../../model/ui'
 import './Toolbar.css'
 
@@ -15,8 +15,14 @@ const TOOLS: { id: EditorTool; label: string }[] = [
   { id: 'select', label: 'Select' },
   { id: 'outline', label: 'Outline' },
   { id: 'shearLine', label: 'Shear Line' },
+  { id: 'element', label: 'Element' },
   { id: 'opening', label: 'Opening' },
   { id: 'delete', label: 'Delete' },
+]
+
+const KINDS: { id: LateralElement['kind']; label: string }[] = [
+  { id: 'shearWall', label: 'Shear wall' },
+  { id: 'bracedFrame', label: 'Braced frame' },
 ]
 
 const DIRECTIONS: { id: Axis; label: string }[] = [
@@ -43,6 +49,14 @@ export function Toolbar({ editor, setEditor }: AppViewProps) {
           options={DIRECTIONS}
           value={editor.lineDirection}
           onChange={(lineDirection) => setEditor((e) => ({ ...e, lineDirection }))}
+        />
+      )}
+      {editor.tool === 'element' && (
+        <Segmented
+          label="Kind"
+          options={KINDS}
+          value={editor.elementKind}
+          onChange={(elementKind) => setEditor((e) => ({ ...e, elementKind }))}
         />
       )}
     </div>

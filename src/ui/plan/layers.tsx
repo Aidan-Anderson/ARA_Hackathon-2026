@@ -1,6 +1,6 @@
 // Track B: SVG layers of the plan view (spec §6.2), drawn in screen coordinates so text stays upright.
 
-import type { Axis, Level, Point } from '../../model/project'
+import type { Axis, LateralElement, Level, Point, ShearLine } from '../../model/project'
 import type { Selection } from '../../model/ui'
 import type { Gridline } from './grid'
 import { alongLine, lineExtent } from './lineGeometry'
@@ -186,4 +186,24 @@ export function RectPreview({ a, b, v }: { a: Point; b: Point; v: Viewport }) {
       height={bottomRight.y - topLeft.y}
     />
   )
+}
+
+/** The Lateral Element being dragged out along a Shear Line with the Element tool (B3.1). */
+export function ElementPreview({
+  line,
+  a,
+  b,
+  kind,
+  v,
+}: {
+  line: ShearLine | undefined
+  a: number
+  b: number
+  kind: LateralElement['kind']
+  v: Viewport
+}) {
+  if (!line) return null
+  const start = toScreen(v, alongLine(line, a))
+  const end = toScreen(v, alongLine(line, b))
+  return <line className={`element-preview ${kind}`} x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
 }

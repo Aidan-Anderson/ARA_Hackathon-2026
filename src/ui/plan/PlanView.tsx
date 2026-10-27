@@ -1,16 +1,18 @@
-// Track B: the SVG plan view (spec §6.2). Wheel zooms about the cursor; dragging with Select (or the
-// middle button) pans; Fit resets. Tools turn clicks into edits of the current Level.
+// Track B: the SVG plan view (spec §6.2). Wheel zooms about the cursor; dragging empty plan with
+// Select (or the middle button) pans; dragging a Shear Line with Select moves it; Fit resets.
+// Tools turn clicks and drags into edits of the current Level.
 
 import { useEffect, useRef, useState, type PointerEvent, type WheelEvent } from 'react'
 import { checkOutline } from '../../model/outline'
 import type { Level, Point, Project } from '../../model/project'
 import { currentLevel, type AppViewProps, type EditorState, type Selection } from '../../model/ui'
 import { sameSelection } from '../panels/selection'
-import { addOpening, addShearLine, removeItem, setOutline } from './edit'
+import { addElement, addOpening, addShearLine, moveShearLine, removeItem, setOutline } from './edit'
 import { gridlines, nearestGridline, type Gridline } from './grid'
 import { hitTest, type Hit } from './hitTest'
 import {
   DraftLayer,
+  ElementPreview,
   GridLayer,
   LinePreview,
   OpeningLayer,
@@ -19,7 +21,15 @@ import {
   RectPreview,
   ShearLineLayer,
 } from './layers'
-import { closeOutline, drawnLineName, nextVertex, snapLinePosition, snapPoint, type SnapContext } from './snap'
+import {
+  closeOutline,
+  drawnLineName,
+  nextVertex,
+  snapAlong,
+  snapLinePosition,
+  snapPoint,
+  type SnapContext,
+} from './snap'
 import { useElementSize } from './useElementSize'
 import { boundsOf, fitViewport, toPlan, zoomAt, type Bounds, type Viewport } from './viewport'
 import './PlanView.css'
@@ -32,13 +42,19 @@ const CLICK_SLOP_PX = 4
 const SNAP_PX = 10
 
 type Drag = {
-  kind: 'pan' | 'click' | 'rect'
+  kind: 'pan' | 'click' | 'rect' | 'element' | 'moveLine'
   x: number
   y: number
   start: Viewport
   moved: boolean
   /** Plan corner where an Opening rectangle started. */
   anchor?: Point
+  /** The Shear Line being moved, or being drawn on with the Element tool. */
+  lineId?: string
+  /** Where a new Lateral Element started along its line. */
+  along?: number
+  /** What a Select press landed on, selected if the press turns out to be a click. */
+  hit?: Hit
 }
 
 /** An outline being drawn, tied to the Level it was started on. */
@@ -51,7 +67,10 @@ function toSelection(hit: Hit, levelId: string): Selection {
 }
 
 function hint(editor: EditorState, drafting: boolean): string {
-  if (editor.tool === 'select') return 'Click to select; drag to pan; scroll to zoom.'
+  if (editor.tool === 'select') return 'Click to select; drag a Shear Line to move it; drag elsewhere to pan; scroll to zoom.'
+  if (editor.tool === 'element') {
+    return `Drag along a Shear Line to add a ${editor.elementKind === 'bracedFrame' ? 'braced frame' : 'shear wall'}.`
+  }
   if (editor.tool === 'opening') return 'Drag a rectangle to add an Opening (stair, shaft).'
   if (editor.tool === 'delete') return 'Click a Shear Line, Lateral Element, or Opening to delete it.'
   if (editor.tool === 'outline') {
@@ -78,6 +97,7 @@ export function PlanView({ project, setProject, levelId, editor, selection, setS
   const [hover, setHover] = useState<Point | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [rect, setRect] = useState<{ a: Point; b: Point } | null>(null)
+  const [newElement, setNewElement] = useState<{ lineId: string; a: number; b: number } | null>(null)
   const drag = useRef<Drag | null>(null)
 
   // A draft only counts on the Level and tool it was started with.
@@ -130,15 +150,34 @@ export function PlanView({ project, setProject, levelId, editor, selection, setS
     return { x: event.clientX - box.left, y: event.clientY - box.top }
   }
 
+  /** The Shear Line under p: directly, or through one of its Lateral Elements. */
+  function lineUnder(p: Point): { hit: Hit; lineId: string } | null {
+    const hit = hitTest(level, bounds, p, tolerance)
+    if (hit?.kind === 'lateralElement') return { hit, lineId: hit.lineId }
+    if (hit?.kind === 'shearLine') return { hit, lineId: hit.id }
+    return null
+  }
+
   function onPointerDown(event: PointerEvent<SVGSVGElement>) {
     const p = local(event)
-    const pan = event.button === 1 || (event.button === 0 && editor.tool === 'select')
+    const at = toPlan(v, p.x, p.y)
+    const base = { ...p, start: v, moved: false }
+    const under = event.button === 0 && (editor.tool === 'select' || editor.tool === 'element') ? lineUnder(at) : null
+    const line = under && level.shearLines.find((l) => l.id === under.lineId)
+
     if (event.button === 0 && editor.tool === 'opening') {
-      const anchor = snapPoint(toPlan(v, p.x, p.y), snap)
-      drag.current = { kind: 'rect', ...p, start: v, moved: false, anchor }
+      const anchor = snapPoint(at, snap)
+      drag.current = { kind: 'rect', ...base, anchor }
       setRect({ a: anchor, b: anchor })
+    } else if (editor.tool === 'element' && line) {
+      const along = snapAlong(line.direction, at, snap)
+      drag.current = { kind: 'element', ...base, lineId: line.id, along }
+      setNewElement({ lineId: line.id, a: along, b: along })
+    } else if (editor.tool === 'select' && under) {
+      drag.current = { kind: 'moveLine', ...base, lineId: under.lineId, hit: under.hit }
     } else {
-      drag.current = { kind: pan ? 'pan' : 'click', ...p, start: v, moved: false }
+      const pan = event.button === 1 || (event.button === 0 && editor.tool === 'select')
+      drag.current = { kind: pan ? 'pan' : 'click', ...base }
     }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
@@ -150,8 +189,17 @@ export function PlanView({ project, setProject, levelId, editor, selection, setS
     const d = drag.current
     if (!d) return
     if (Math.hypot(p.x - d.x, p.y - d.y) > CLICK_SLOP_PX) d.moved = true
+    const line = d.lineId ? level.shearLines.find((l) => l.id === d.lineId) : undefined
     if (d.kind === 'pan' && d.moved) setUserViewport({ ...d.start, ox: d.start.ox + p.x - d.x, oy: d.start.oy + p.y - d.y })
     if (d.kind === 'rect' && d.anchor) setRect({ a: d.anchor, b: snapPoint(at, snap) })
+    if (d.kind === 'element' && line && d.along !== undefined) {
+      setNewElement({ lineId: line.id, a: d.along, b: snapAlong(line.direction, at, snap) })
+    }
+    if (d.kind === 'moveLine' && d.moved && line) {
+      // Results update live as the line moves.
+      const position = snapLinePosition(at, line.direction, snap)
+      if (position !== line.position) setProject((p) => moveShearLine(p, level.id, line.id, position, lines))
+    }
   }
 
   function onPointerUp(event: PointerEvent<SVGSVGElement>) {
@@ -164,6 +212,19 @@ export function PlanView({ project, setProject, levelId, editor, selection, setS
       const corner = snapPoint(at, snap)
       setRect(null)
       setProject((p) => addOpening(p, level.id, d.anchor!, corner))
+      return
+    }
+    if (d.kind === 'element') {
+      const line = level.shearLines.find((l) => l.id === d.lineId)
+      setNewElement(null)
+      if (d.moved && line && d.along !== undefined) {
+        const end = snapAlong(line.direction, at, snap)
+        setProject((p) => addElement(p, level.id, line.id, d.along!, end, editor.elementKind))
+      }
+      return
+    }
+    if (d.kind === 'moveLine') {
+      if (!d.moved && d.hit) setSelection(toSelection(d.hit, level.id))
       return
     }
     if (!d.moved) click(at)
@@ -225,6 +286,15 @@ export function PlanView({ project, setProject, levelId, editor, selection, setS
         <OpeningLayer level={level} v={v} selection={selection} />
         <ShearLineLayer level={level} v={v} bounds={bounds} selection={selection} />
         {rect && <RectPreview a={rect.a} b={rect.b} v={v} />}
+        {newElement && (
+          <ElementPreview
+            line={level.shearLines.find((l) => l.id === newElement.lineId)}
+            a={newElement.a}
+            b={newElement.b}
+            kind={editor.elementKind}
+            v={v}
+          />
+        )}
         {linePreview !== null && <LinePreview direction={editor.lineDirection} position={linePreview} bounds={bounds} v={v} />}
         {(drafting || nextCorner) && <DraftLayer points={drafting ?? []} next={nextCorner} closable={closable(hover)} v={v} />}
       </svg>

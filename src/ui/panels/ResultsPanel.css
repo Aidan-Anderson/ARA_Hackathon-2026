@@ -1,0 +1,58 @@
+.results h3 {
+  margin: 1rem 0 0.25rem;
+  font-size: 0.875rem;
+}
+
+.results table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.results th,
+.results td {
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid #eaeef2;
+  text-align: right;
+}
+
+.results th:first-child,
+.results td:first-child {
+  text-align: left;
+}
+
+.results thead th {
+  color: #656d76;
+  font-weight: 600;
+}
+
+.results tfoot td {
+  font-weight: 600;
+}
+
+.results-note {
+  color: #656d76;
+  font-size: 0.8125rem;
+}
+
+.case-switch {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.case-switch button {
+  padding: 0.25rem 0.625rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.case-switch button.active {
+  border-color: #0969da;
+  background: #ddf4ff;
+  font-weight: 600;
+}

@@ -1,0 +1,48 @@
+import { renderToString } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+import { analyze } from '../../engine/analyze'
+import { t1 } from '../../model/fixtures'
+import type { Project } from '../../model/project'
+import type { AppViewProps, CaseView } from '../../model/ui'
+import { ResultsPanel } from './ResultsPanel'
+
+function render(project: Project, caseId: CaseView): string {
+  const noop = () => {}
+  const props: AppViewProps = {
+    project,
+    setProject: noop,
+    results: analyze(project),
+    levelId: project.levels[0].id,
+    setLevelId: noop,
+    caseId,
+    setCaseId: noop,
+    showAsd: false,
+    setShowAsd: noop,
+    selection: null,
+    setSelection: noop,
+  }
+  // Drop the <!-- --> markers React puts between adjacent text nodes.
+  return renderToString(<ResultsPanel {...props} />).replaceAll('<!-- -->', '')
+}
+
+describe('ResultsPanel', () => {
+  it('shows T1 SY Level forces and Diaphragm Reactions', () => {
+    const html = render(t1(), 'SY')
+    expect(html).toContain('26.00 k') // F_x and Σ reactions
+    expect(html).toContain('120.00 k') // seismic weight
+    for (const reaction of ['5.20 k', '13.00 k', '7.80 k']) expect(html).toContain(reaction)
+  })
+
+  it('follows the inputs: doubling F_x doubles the reactions', () => {
+    const project = t1()
+    project.levels[0].seismic.fxPsf = 10.4
+    const html = render(project, 'SY')
+    for (const reaction of ['10.40 k', '26.00 k', '15.60 k', '52.00 k']) expect(html).toContain(reaction)
+  })
+
+  it('asks for a second Shear Line when a direction has only one', () => {
+    const project = t1()
+    project.levels[0].shearLines = project.levels[0].shearLines.filter((line) => line.name !== 'B')
+    expect(render(project, 'SX')).toContain('Needs at least two Shear Lines in X')
+  })
+})

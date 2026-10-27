@@ -3,11 +3,12 @@
 
 import { crossSection } from '../model/geometry'
 import { checkOutline } from '../model/outline'
-import type { Axis, Level, ShearLine } from '../model/project'
+import type { Axis, Level, Project, ShearLine } from '../model/project'
 import type { Warning } from '../model/results'
 import { clippedElements } from './collectors'
 import { overhangs, shearLinesIn } from './diaphragm'
-import { extentOf, levelSections } from './sections'
+import { continuation } from './levels'
+import { cutAt, extentOf, levelSections } from './sections'
 
 /** SDPWS §4.2.6 cantilever limit used for the Overhang warning. */
 const OVERHANG_WARN_FT = 6
@@ -60,6 +61,30 @@ export function levelWarnings(level: Level): Warning[] {
       levelId: level.id,
       message: `${level.name}: chord forces around Openings are not calculated.`,
     })
+  }
+  return warnings
+}
+
+/**
+ * Shear Lines that stop at a Level whose Diaphragm below doesn't reach them: their Transfer Force
+ * has nowhere to land, so it is skipped (spec §5.10). Levels with invalid outlines are skipped.
+ */
+export function transferWarnings(project: Project, invalid: Set<string | undefined>): Warning[] {
+  const warnings: Warning[] = []
+  for (let i = 1; i < project.levels.length; i++) {
+    const level = project.levels[i]
+    const below = project.levels[i - 1]
+    if (invalid.has(level.id) || invalid.has(below.id)) continue
+    for (const line of level.shearLines) {
+      if (continuation(line, below) || cutAt(below, line.direction, line.position)) continue
+      warnings.push({
+        severity: 'error',
+        code: 'transfer-outside',
+        levelId: level.id,
+        refId: line.id,
+        message: `${level.name}: Shear Line ${line.name} stops here, but the ${below.name} Diaphragm doesn't reach it, so its Transfer Force is not calculated.`,
+      })
+    }
   }
   return warnings
 }

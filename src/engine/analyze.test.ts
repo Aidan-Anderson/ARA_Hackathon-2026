@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { t1, t1b, t1w, t2, t3, t4, t6, t6b, t7 } from '../model/fixtures'
+import { rect } from '../model/fixtures/build'
+import { t1, t1b, t1w, t2, t3, t4, t5, t6, t6b, t7 } from '../model/fixtures'
 import type { Project } from '../model/project'
 import type { LoadCaseId } from '../model/results'
 import { analyze } from './analyze'
@@ -409,6 +410,89 @@ describe('analyze: Lateral Elements and Collectors (A3.1)', () => {
     const results = analyze(project)
     expect(results.warnings).toEqual([expect.objectContaining({ code: 'line-without-elements', refId: 'roof-2' })])
     expect(linesByName(project, 'SY')['2'].collector.maxForce).toBe(0)
+  })
+})
+
+describe('analyze: story shear and Transfer Forces down the building (A4.1)', () => {
+  it('T2: story shear accumulates down stacked lines: Roof 6/15/9, Level 2 12/30/18', () => {
+    const project = t2()
+    const roof = linesByName(project, 'SY', 1)
+    const level2 = linesByName(project, 'SY', 0)
+    for (const [name, top, bottom] of [['1', 6, 12], ['2', 15, 30], ['3', 9, 18]] as const) {
+      expect(roof[name].storyShear).toBeCloseTo(top, 6)
+      expect(level2[name].storyShear).toBeCloseTo(bottom, 6)
+      expect(roof[name].continuesBelow).toBe(true)
+      expect(level2[name].continuesBelow).toBe(true) // bottom Level: to the foundation
+    }
+    // Lateral Elements carry the story shear, not just their own Level's reaction.
+    expect(level2['2'].elements[0].force).toBeCloseTo(30, 6)
+    expect(level2['2'].elements[0].unitShear).toBeCloseTo(1500, 6)
+  })
+
+  it('T5: the Roof’s line 2 stops, every other line continues', () => {
+    const roof = linesByName(t5(), 'SY', 1)
+    expect(roof['2'].continuesBelow).toBe(false)
+    expect(roof['1'].continuesBelow).toBe(true)
+    expect(roof['3'].continuesBelow).toBe(true)
+  })
+
+  it('T5: line 2 transfers 15.0 k into Level 2 at x = 40, with a 300 plf transfer Collector peaking at 9.0 k', () => {
+    const level2 = analyze(t5()).cases.SY.levels[0]
+    expect(level2.transfersIn).toHaveLength(1)
+    const transfer = level2.transfersIn[0]
+    expect(transfer.fromLevelId).toBe('roof')
+    expect(transfer.fromLineId).toBe('roof-2')
+    expect(transfer.position).toBe(40)
+    expect(transfer.force).toBeCloseTo(15.0, 6)
+    expect(transfer.collectorPlf).toBeCloseTo(300, 6)
+    expect(transfer.collector.maxForce).toBeCloseTo(9.0, 6)
+    const { v } = transfer.collector.force
+    expect(v[v.length - 1]).toBeCloseTo(0, 6) // the Collector closes
+  })
+
+  it('T5 Level 2: reactions 24/21, story shear 30/30, F_px reactions 35/32, M 984 and Chord 19.68 at x = 40', () => {
+    const project = t5()
+    const lines = linesByName(project, 'SY', 0)
+    expect(lines['1'].reactionFx).toBeCloseTo(24.0, 6)
+    expect(lines['3'].reactionFx).toBeCloseTo(21.0, 6)
+    expect(lines['1'].storyShear).toBeCloseTo(30.0, 6)
+    expect(lines['3'].storyShear).toBeCloseTo(30.0, 6)
+    expect(lines['1'].reactionFpx).toBeCloseTo(35.0, 6)
+    expect(lines['3'].reactionFpx).toBeCloseTo(32.0, 6)
+    const span = spansByName(project, 'SY', 0)['1→3']
+    expect(span.maxMoment).toBeCloseTo(984, 6)
+    expect(span.maxChord).toBeCloseTo(19.68, 6)
+  })
+
+  it('T5: the ground-story lines carry the whole building’s F_x (60 k)', () => {
+    const level2 = analyze(t5()).cases.SY.levels[0]
+    expect(level2.lines.reduce((sum, line) => sum + line.storyShear, 0)).toBeCloseTo(60, 6)
+  })
+
+  it('T5: the transfer Collector is in the Envelope', () => {
+    const entry = analyze(t5()).envelope.find((e) => e.kind === 'transferCollector')!
+    expect(entry.refId).toBe('roof:roof-2')
+    expect(entry.strength.value).toBeCloseTo(9.0, 6)
+  })
+
+  it('a line that stops beyond the Diaphragm below: transfer-outside, and no transfer', () => {
+    const project = t5()
+    const level2 = project.levels[0]
+    level2.outline = rect(30, 50) // Level 2 is only 30 ft wide
+    level2.shearLines.find((line) => line.name === '3')!.position = 30
+    for (const line of level2.shearLines.filter((l) => l.direction === 'X')) line.lateralElements[0].end = 30
+    const results = analyze(project)
+    const outside = results.warnings.filter((w) => w.code === 'transfer-outside')
+    expect(outside.map((w) => w.refId).sort()).toEqual(['roof-2', 'roof-3'])
+    expect(outside.every((w) => w.severity === 'error' && w.levelId === 'roof')).toBe(true)
+    expect(results.cases.SY.levels[0].transfersIn).toEqual([])
+  })
+
+  it('wind flows down the same way (T2 with 200 plf in Y)', () => {
+    const project = t2()
+    project.loads.windPlf.Y = 200 // 20 k per Level
+    const level2 = linesByName(project, 'WY', 0)
+    expect(level2['2'].storyShear).toBeCloseTo(2 * 0.5 * 20, 6) // line 2 takes half of each Level's 20 k
   })
 })
 

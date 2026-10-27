@@ -19,19 +19,22 @@ import {
 } from './diaphragm'
 import { envelope } from './envelope'
 import { levelForces, type LevelForces } from './forces'
+import { continuation, fromAbove, NOTHING_FROM_ABOVE, transferResult, type FromAbove } from './levels'
 import { cutAt, extentOf, levelSections, reentrantVertices } from './sections'
-import { levelWarnings } from './validate'
+import { levelWarnings, transferWarnings } from './validate'
+import type { BeamLoads } from './beam'
 
 const SEISMIC_CASES: LoadCaseId[] = ['SX', 'SY']
 
 /**
- * The engine's only entry point (docs/spec.md §4.1, §5).
- * So far: seismic and wind on each Level, with L/T shapes, Openings, Overhangs, Re-entrant Corners,
- * Lateral Elements, Collectors, the Envelope, and validation. Story shear across Levels arrives in A4.1.
+ * The engine's only entry point (docs/spec.md §4.1, §5): seismic and wind on every Level, with
+ * L/T shapes, Openings, Overhangs, Re-entrant Corners, Lateral Elements, Collectors, story shear
+ * down the building, Transfer Forces, the Envelope, and validation.
  */
 export function analyze(project: Project): Results {
   const warnings = project.levels.flatMap(levelWarnings)
   const invalid = new Set(warnings.filter((w) => w.code === 'outline-invalid').map((w) => w.levelId))
+  warnings.push(...transferWarnings(project, invalid))
   const forces = levelForces(project)
 
   const cases = {} as Record<LoadCaseId, CaseResult>
@@ -41,16 +44,51 @@ export function analyze(project: Project): Results {
       caseId: loadCase.id,
       direction: loadCase.direction,
       asdFactor: loadCase.asdFactor,
-      levels: project.levels.map((level, i) =>
-        invalid.has(level.id) ? emptyLevel(level) : analyzeLevel(level, loadCase.direction, forces[i], windPlf),
-      ),
+      levels: analyzeStack(project, loadCase.direction, forces, windPlf, invalid),
     }
   }
   return { cases, envelope: envelope(cases), warnings }
 }
 
-/** One Level in one Load Case. windPlf is null for seismic; wind has one run, used as both F_x and F_px. */
-function analyzeLevel(level: Level, direction: Axis, forces: LevelForces, windPlf: number | null): LevelResult {
+/**
+ * Every Level for one Load Case, top to bottom, so story shear and Transfer Forces flow down.
+ * A Level with an invalid outline breaks the chain: nothing flows into or through it.
+ */
+function analyzeStack(
+  project: Project,
+  direction: Axis,
+  forces: LevelForces[],
+  windPlf: number | null,
+  invalid: Set<string | undefined>,
+): LevelResult[] {
+  const results: LevelResult[] = []
+  let incoming = NOTHING_FROM_ABOVE
+  for (let i = project.levels.length - 1; i >= 0; i--) {
+    const level = project.levels[i]
+    if (invalid.has(level.id)) {
+      results[i] = emptyLevel(level)
+      incoming = NOTHING_FROM_ABOVE
+      continue
+    }
+    const below = i > 0 && !invalid.has(project.levels[i - 1].id) ? project.levels[i - 1] : null
+    results[i] = analyzeLevel(level, direction, forces[i], windPlf, incoming, below)
+    incoming = below ? fromAbove(level, results[i], below, direction) : NOTHING_FROM_ABOVE
+  }
+  return results
+}
+
+/**
+ * One Level in one Load Case. windPlf is null for seismic; wind has one run, used as both F_x and F_px.
+ * Transfer Forces from above go into both runs as point loads (spec §5.10).
+ */
+function analyzeLevel(
+  level: Level,
+  direction: Axis,
+  forces: LevelForces,
+  windPlf: number | null,
+  incoming: FromAbove,
+  below: Level | null,
+): LevelResult {
   const sections = levelSections(level, direction)
   const extent = extentOf(sections.gross)
   const wind = windPlf === null ? null : lineLoad(sections.gross, windPlf / 1000)
@@ -70,21 +108,34 @@ function analyzeLevel(level: Level, direction: Axis, forces: LevelForces, windPl
   const lines = shearLinesIn(level, direction)
   if (lines.length < 2 || !extent || forces.netArea <= 0) return result
 
-  const fpxLoads = wind ?? areaLoad(sections.net, forces.fpx.design / forces.netArea)
+  const transfers = incoming.transfers.map((t) => ({ at: t.line.position, p: t.force }))
+  const withTransfers = (loads: BeamLoads): BeamLoads => ({ uniform: loads.uniform, points: [...loads.points, ...transfers] })
+  const fpxLoads = withTransfers(wind ?? areaLoad(sections.net, forces.fpx.design / forces.netArea))
   const fpxRun = diaphragmSpans(lines, fpxLoads, sections, extent, reentrantVertices(level.outline, direction, sections.gross))
   const reactionsFx = wind
     ? fpxRun.reactions
-    : diaphragmReactions(lines, areaLoad(sections.net, forces.fx / forces.netArea), extent)
+    : diaphragmReactions(lines, withTransfers(areaLoad(sections.net, forces.fx / forces.netArea)), extent)
 
   result.spans = fpxRun.spans
   result.corners = fpxRun.corners
-  result.lines = lines.map((line, i) => lineResult(line, level, i, reactionsFx[i], fpxRun))
+  result.transfersIn = incoming.transfers.map((transfer) => transferResult(level, direction, transfer))
+  result.lines = lines.map((line, i) =>
+    lineResult(line, level, reactionsFx[i], fpxRun, i, incoming.shear.get(line.id) ?? 0, below),
+  )
   return result
 }
 
-function lineResult(line: ShearLine, level: Level, i: number, reactionFx: number, fpxRun: DiaphragmSpans): LineResult {
+function lineResult(
+  line: ShearLine,
+  level: Level,
+  reactionFx: number,
+  fpxRun: DiaphragmSpans,
+  i: number,
+  shearFromAbove: number,
+  below: Level | null,
+): LineResult {
   const cut = cutAt(level, line.direction, line.position)
-  const storyShear = reactionFx // A4.1 accumulates Levels above
+  const storyShear = reactionFx + shearFromAbove
   return {
     lineId: line.id,
     length: cut ? cut.section[1] - cut.section[0] : 0,
@@ -95,7 +146,8 @@ function lineResult(line: ShearLine, level: Level, i: number, reactionFx: number
     unitShearRight: fpxRun.unitShearRight[i],
     elements: cut ? elementDemands(line, cut.section, storyShear) : [],
     collector: cut ? lineCollector(line, cut, fpxRun.reactions[i]) : { force: { s: [], v: [] }, maxForce: 0 },
-    continuesBelow: true, // A4.1
+    // The bottom Level's lines go to the foundation.
+    continuesBelow: !below || continuation(line, below) !== undefined,
   }
 }
 

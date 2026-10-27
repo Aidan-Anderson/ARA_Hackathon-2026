@@ -1,5 +1,5 @@
 // Track A: results tables for the current Level and Load Case, or the Envelope (spec §6.5).
-// Every Demand shows strength with ASD (× asdFactor) beneath it. Transfers arrive with A4.1.
+// Every Demand shows strength with ASD (× asdFactor) beneath it.
 
 import type { Level, Project } from '../../model/project'
 import { LOAD_CASES, type CaseResult, type EnvelopeEntry, type FpxResult, type Results } from '../../model/results'
@@ -35,7 +35,7 @@ export function ResultsPanel({ project, results, levelId, caseId, setCaseId }: A
       ) : caseId === 'ENV' ? (
         <EnvelopeTable project={project} level={level} results={results} />
       ) : (
-        <LevelTables level={level} caseResult={results.cases[caseId]} />
+        <LevelTables levels={project.levels} level={level} caseResult={results.cases[caseId]} />
       )}
     </div>
   )
@@ -51,7 +51,7 @@ function Demand({ value, asd, digits = 2 }: { value: number; asd: number; digits
   )
 }
 
-function LevelTables({ level, caseResult }: { level: Level; caseResult: CaseResult }) {
+function LevelTables({ levels, level, caseResult }: { levels: Level[]; level: Level; caseResult: CaseResult }) {
   const levelResult = caseResult.levels.find((result) => result.levelId === level.id)
   if (!levelResult) return null
   const asd = caseResult.asdFactor
@@ -59,6 +59,7 @@ function LevelTables({ level, caseResult }: { level: Level; caseResult: CaseResu
   const line = (lineId: string | null) => level.shearLines.find((sl) => sl.id === lineId)
   const sumFx = levelResult.lines.reduce((sum, l) => sum + l.reactionFx, 0)
   const sumFpx = levelResult.lines.reduce((sum, l) => sum + l.reactionFpx, 0)
+  const sumStoryShear = levelResult.lines.reduce((sum, l) => sum + l.storyShear, 0)
   const { fpx } = levelResult
 
   return (
@@ -119,9 +120,9 @@ function LevelTables({ level, caseResult }: { level: Level; caseResult: CaseResu
           <thead>
             <tr>
               <th>Line</th>
-              <th>Length (ft)</th>
               <th>{wind ? 'R (k)' : 'R at F_x (k)'}</th>
               {!wind && <th>R at F_px (k)</th>}
+              <th>Story shear (k)</th>
               <th>v left (plf)</th>
               <th>v right (plf)</th>
             </tr>
@@ -131,8 +132,8 @@ function LevelTables({ level, caseResult }: { level: Level; caseResult: CaseResu
               <tr key={l.lineId}>
                 <td>
                   {line(l.lineId)?.name} <span className="muted">@ {line(l.lineId)?.position}</span>
+                  {!l.continuesBelow && <span className="tag">stops ↓</span>}
                 </td>
-                <td>{l.length.toFixed(1)}</td>
                 <td>
                   <Demand value={l.reactionFx} asd={asd} />
                 </td>
@@ -141,6 +142,9 @@ function LevelTables({ level, caseResult }: { level: Level; caseResult: CaseResu
                     <Demand value={l.reactionFpx} asd={asd} />
                   </td>
                 )}
+                <td>
+                  <Demand value={l.storyShear} asd={asd} />
+                </td>
                 <td>
                   <Demand value={l.unitShearLeft} asd={asd} digits={1} />
                 </td>
@@ -153,7 +157,6 @@ function LevelTables({ level, caseResult }: { level: Level; caseResult: CaseResu
           <tfoot>
             <tr>
               <td>Σ</td>
-              <td />
               <td>
                 <Demand value={sumFx} asd={asd} />
               </td>
@@ -162,6 +165,9 @@ function LevelTables({ level, caseResult }: { level: Level; caseResult: CaseResu
                   <Demand value={sumFpx} asd={asd} />
                 </td>
               )}
+              <td>
+                <Demand value={sumStoryShear} asd={asd} />
+              </td>
               <td />
               <td />
             </tr>
@@ -268,6 +274,46 @@ function LevelTables({ level, caseResult }: { level: Level; caseResult: CaseResu
                   </td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {levelResult.transfersIn.length > 0 && (
+        <>
+          <h3>Transfers into this Diaphragm</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>From</th>
+                <th>At (ft)</th>
+                <th>Force (k)</th>
+                <th>Collector (plf)</th>
+                <th>max Collector force (k)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {levelResult.transfersIn.map((transfer) => {
+                const fromLevel = levels.find((l) => l.id === transfer.fromLevelId)
+                const fromLine = fromLevel?.shearLines.find((l) => l.id === transfer.fromLineId)
+                return (
+                  <tr key={`${transfer.fromLevelId}:${transfer.fromLineId}`}>
+                    <td>
+                      {fromLevel?.name}, line {fromLine?.name}
+                    </td>
+                    <td>{transfer.position.toFixed(1)}</td>
+                    <td>
+                      <Demand value={transfer.force} asd={asd} />
+                    </td>
+                    <td>
+                      <Demand value={transfer.collectorPlf} asd={asd} digits={1} />
+                    </td>
+                    <td>
+                      <Demand value={transfer.collector.maxForce} asd={asd} />
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </>

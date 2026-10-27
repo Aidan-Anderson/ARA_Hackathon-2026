@@ -1,13 +1,13 @@
 import { renderToString } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { t1, t1w, t3, t6, t7 } from '../../model/fixtures'
+import { t1, t1w, t3, t5, t6, t7 } from '../../model/fixtures'
 import type { Project } from '../../model/project'
 import type { CaseView } from '../../model/ui'
 import { ResultsPanel } from './ResultsPanel'
 import { plainHtml, viewProps } from './testProps'
 
-function render(project: Project, caseId: CaseView): string {
-  return plainHtml(renderToString(<ResultsPanel {...viewProps(project, caseId)} />))
+function render(project: Project, caseId: CaseView, levelId?: string): string {
+  return plainHtml(renderToString(<ResultsPanel {...viewProps(project, caseId, levelId)} />))
 }
 
 describe('ResultsPanel', () => {
@@ -63,6 +63,21 @@ describe('ResultsPanel', () => {
     project.levels[0].seismic.fxPsf = 10.4
     const html = render(project, 'SY')
     for (const reaction of ['10.40', '26.00', '15.60', '52.00']) expect(html).toContain(`${reaction}<span class="asd">`)
+  })
+
+  it('tags the Roof line that stops (T5)', () => {
+    const html = render(t5(), 'SY', 'roof')
+    expect(html).toContain('stops ↓')
+    expect(html).toContain('Story shear')
+  })
+
+  it('lists the Transfer into Level 2 with its Collector (T5)', () => {
+    const html = render(t5(), 'SY', 'level-2')
+    expect(html).toContain('Transfers into this Diaphragm')
+    expect(html).toContain('Roof, line 2')
+    expect(html).toContain('15.00<span class="asd">10.50</span>') // transfer force
+    expect(html).toContain('300.0<span class="asd">210.0</span>') // Collector plf
+    expect(html).toContain('30.00<span class="asd">21.00</span>') // ground-story shear on lines 1 and 3
   })
 
   it('lists Re-entrant Corners for the L-shape (T3)', () => {

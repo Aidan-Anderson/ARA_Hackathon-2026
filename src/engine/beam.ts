@@ -1,4 +1,4 @@
-// Simple-beam statics for one Diaphragm Span (docs/spec.md §5.5, ADR 0001).
+// Beam statics for Diaphragm Spans and Overhangs (docs/spec.md §5.5, ADR 0001).
 // s is the absolute coordinate along the span axis (ft). Loads act in the load direction;
 // reactions are positive against the load. Units: ft, kips, kip-ft.
 
@@ -26,9 +26,10 @@ export interface Stations {
   moment: number[]
 }
 
-export interface SimpleBeam {
+export interface Beam {
   start: number
   end: number
+  /** Support reactions; 0 at a free end. */
   rStart: number
   rEnd: number
   /** Shear (kips) just right of s, or just left with side 'left'. Differs only at point loads. */
@@ -45,7 +46,31 @@ export interface SimpleBeam {
 const EPS = 1e-9
 
 /** A simply supported beam over [start, end]. Loads outside the span are ignored. */
-export function simpleBeam(start: number, end: number, loads: BeamLoads): SimpleBeam {
+export function simpleBeam(start: number, end: number, loads: BeamLoads): Beam {
+  const span = clip(start, end, loads)
+  const rEnd = span.momentAboutStart / (end - start)
+  return beam(start, end, span, { rStart: span.total - rEnd, rEnd, momentAtStart: 0 })
+}
+
+/**
+ * A cantilever over [start, end], supported at one end and free at the other: an Overhang.
+ * All of its load goes to the support; the moment there is hogging (negative).
+ */
+export function cantilever(start: number, end: number, loads: BeamLoads, support: 'start' | 'end'): Beam {
+  const span = clip(start, end, loads)
+  return support === 'start'
+    ? beam(start, end, span, { rStart: span.total, rEnd: 0, momentAtStart: -span.momentAboutStart })
+    : beam(start, end, span, { rStart: 0, rEnd: span.total, momentAtStart: 0 })
+}
+
+interface ClippedLoads {
+  uniform: UniformLoad[]
+  points: PointLoad[]
+  total: number
+  momentAboutStart: number
+}
+
+function clip(start: number, end: number, loads: BeamLoads): ClippedLoads {
   const uniform = loads.uniform
     .map((load) => ({ from: Math.max(load.from, start), to: Math.min(load.to, end), w: load.w }))
     .filter((load) => load.to - load.from > EPS)
@@ -62,9 +87,19 @@ export function simpleBeam(start: number, end: number, loads: BeamLoads): Simple
     total += load.p
     momentAboutStart += load.p * (load.at - start)
   }
-  const rEnd = momentAboutStart / (end - start)
-  const rStart = total - rEnd
+  return { uniform, points, total, momentAboutStart }
+}
 
+/**
+ * Any statically determinate beam: shear and moment follow from the reaction and moment at
+ * the start, minus the loads to the left of s.
+ */
+function beam(
+  start: number,
+  end: number,
+  { uniform, points }: ClippedLoads,
+  { rStart, rEnd, momentAtStart }: { rStart: number; rEnd: number; momentAtStart: number },
+): Beam {
   function shearAt(s: number, side: 'left' | 'right' = 'right'): number {
     let shear = rStart
     for (const load of uniform) shear -= load.w * loadedLength(load, s)
@@ -73,7 +108,7 @@ export function simpleBeam(start: number, end: number, loads: BeamLoads): Simple
   }
 
   function momentAt(s: number): number {
-    let moment = rStart * (s - start)
+    let moment = momentAtStart + rStart * (s - start)
     for (const load of uniform) {
       const length = loadedLength(load, s)
       moment -= load.w * length * (s - (load.from + length / 2))

@@ -42,6 +42,15 @@
   font-size: 0.8125rem;
 }
 
+.results-error {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #ffcecb;
+  border-radius: 6px;
+  background: #ffebe9;
+  color: #82071e;
+  font-size: 0.8125rem;
+}
+
 .case-switch {
   display: flex;
   gap: 0.25rem;

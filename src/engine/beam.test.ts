@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { maxAbs, simpleBeam } from './beam'
+import { cantilever, maxAbs, simpleBeam } from './beam'
 
 describe('simpleBeam', () => {
   it('splits a uniform load equally: wL/2 each end, wL²/8 at midspan', () => {
@@ -48,6 +48,23 @@ describe('simpleBeam', () => {
     expect(at40[0]).toBeCloseTo(14.2, 6)
     expect(at40[1]).toBeCloseTo(-0.8, 6)
     expect(maxAbs(moment)).toBeCloseTo(984, 6)
+  })
+
+  it('cantilevers put all load on the support, with zero shear and moment at the free end (T7)', () => {
+    const loads = { uniform: [{ from: 0, to: 100, w: 0.5 }], points: [] }
+    const right = cantilever(90, 100, loads, 'start') // Overhang past the last line
+    expect(right.rStart).toBeCloseTo(5, 6)
+    expect(right.rEnd).toBe(0)
+    expect(right.shearAt(90, 'right')).toBeCloseTo(5, 6)
+    expect(right.momentAt(90)).toBeCloseTo(-25, 6)
+    expect(right.shearAt(100, 'left')).toBeCloseTo(0, 9)
+    expect(right.momentAt(100)).toBeCloseTo(0, 9)
+
+    const left = cantilever(0, 10, loads, 'end') // Overhang before the first line at s = 10
+    expect(left.rStart).toBe(0)
+    expect(left.rEnd).toBeCloseTo(5, 6)
+    expect(left.momentAt(0)).toBe(0)
+    expect(left.momentAt(10)).toBeCloseTo(-25, 6)
   })
 
   it('spaces stations at most maxStep apart and ends at both supports', () => {

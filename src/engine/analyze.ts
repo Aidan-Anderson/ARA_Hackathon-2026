@@ -8,19 +8,23 @@ import {
   type LoadCaseId,
   type Results,
 } from '../model/results'
-import { areaLoad, diaphragmReactions, diaphragmSpans, type DiaphragmSpans } from './diaphragm'
+import { areaLoad, diaphragmReactions, diaphragmSpans, shearLinesIn, type DiaphragmSpans } from './diaphragm'
 import { levelForces, type LevelForces } from './forces'
-import { depthPieces } from './sections'
+import { extentOf, levelSections, reentrantVertices } from './sections'
+import { levelWarnings } from './validate'
 
 const SEISMIC_CASES: LoadCaseId[] = ['SX', 'SY']
 
 /**
  * The engine's only entry point (docs/spec.md §4.1, §5).
- * So far: seismic F_x and F_px runs on each Level. Story shear, Openings, Collectors, and wind
- * arrive in later tickets.
+ * So far: seismic F_x and F_px runs on each Level, with L/T shapes, Openings, Overhangs,
+ * Re-entrant Corners, and validation. Story shear, Collectors, and wind arrive in later tickets.
  */
 export function analyze(project: Project): Results {
+  const warnings = project.levels.flatMap(levelWarnings)
+  const invalid = new Set(warnings.filter((w) => w.code === 'outline-invalid').map((w) => w.levelId))
   const forces = levelForces(project)
+
   const cases = {} as Record<LoadCaseId, CaseResult>
   for (const loadCase of LOAD_CASES) {
     const seismic = SEISMIC_CASES.includes(loadCase.id)
@@ -29,11 +33,11 @@ export function analyze(project: Project): Results {
       direction: loadCase.direction,
       asdFactor: loadCase.asdFactor,
       levels: project.levels.map((level, i) =>
-        seismic ? analyzeSeismicLevel(level, loadCase.direction, forces[i]) : emptyLevel(level),
+        seismic && !invalid.has(level.id) ? analyzeSeismicLevel(level, loadCase.direction, forces[i]) : emptyLevel(level),
       ),
     }
   }
-  return { cases, envelope: [], warnings: [] }
+  return { cases, envelope: [], warnings }
 }
 
 function analyzeSeismicLevel(level: Level, direction: Axis, forces: LevelForces): LevelResult {
@@ -48,16 +52,22 @@ function analyzeSeismicLevel(level: Level, direction: Axis, forces: LevelForces)
     corners: [],
     transfersIn: [],
   }
-  const lines = level.shearLines
-    .filter((line) => line.direction === direction)
-    .sort((a, b) => a.position - b.position)
-  if (lines.length < 2 || forces.netArea <= 0) return result
+  const lines = shearLinesIn(level, direction)
+  const sections = levelSections(level, direction)
+  const extent = extentOf(sections.gross)
+  if (lines.length < 2 || !extent || forces.netArea <= 0) return result
 
-  const depth = depthPieces(level.outline, direction)
-  const reactionsFx = diaphragmReactions(lines, areaLoad(depth, forces.fx / forces.netArea))
-  const fpxRun = diaphragmSpans(lines, areaLoad(depth, forces.fpx.design / forces.netArea), { gross: depth, net: depth })
+  const reactionsFx = diaphragmReactions(lines, areaLoad(sections.net, forces.fx / forces.netArea), extent)
+  const fpxRun = diaphragmSpans(
+    lines,
+    areaLoad(sections.net, forces.fpx.design / forces.netArea),
+    sections,
+    extent,
+    reentrantVertices(level.outline, direction, sections.gross),
+  )
 
   result.spans = fpxRun.spans
+  result.corners = fpxRun.corners
   result.lines = lines.map((line, i) => lineResult(line, level, i, reactionsFx[i], fpxRun))
   return result
 }

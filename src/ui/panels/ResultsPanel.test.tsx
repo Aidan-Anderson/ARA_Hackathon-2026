@@ -1,7 +1,7 @@
 import { renderToString } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { analyze } from '../../engine/analyze'
-import { t1 } from '../../model/fixtures'
+import { t1, t3, t6, t7 } from '../../model/fixtures'
 import type { Project } from '../../model/project'
 import type { AppViewProps, CaseView } from '../../model/ui'
 import { ResultsPanel } from './ResultsPanel'
@@ -48,6 +48,23 @@ describe('ResultsPanel', () => {
     project.levels[0].seismic.fxPsf = 10.4
     const html = render(project, 'SY')
     for (const reaction of ['10.40 k', '26.00 k', '15.60 k', '52.00 k']) expect(html).toContain(reaction)
+  })
+
+  it('lists Re-entrant Corners for the L-shape (T3)', () => {
+    const html = render(t3(), 'SY')
+    expect(html).toContain('Re-entrant Corners')
+    expect(html).toContain('(30, 25)')
+    expect(html).toContain('6.75 k')
+  })
+
+  it('labels an Overhang by its free end (T7)', () => {
+    expect(render(t7(), 'SY')).toContain('2→free end')
+  })
+
+  it('shows the outline error instead of tables for an unsupported shape (T6)', () => {
+    const html = render(t6(), 'SY')
+    expect(html).toContain('not supported')
+    expect(html).not.toContain('Level forces')
   })
 
   it('asks for a second Shear Line when a direction has only one', () => {

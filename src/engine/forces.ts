@@ -2,7 +2,7 @@
 
 import type { Loads, Project } from '../model/project'
 import type { FpxResult } from '../model/results'
-import { outlineArea } from './sections'
+import { levelSections } from './sections'
 
 export interface LevelForces {
   /** sf */
@@ -17,7 +17,7 @@ export interface LevelForces {
 /** Forces for every Level, in project order (bottom → top). The same in X and Y. */
 export function levelForces(project: Project): LevelForces[] {
   const base = project.levels.map((level) => {
-    const netArea = outlineArea(level.outline)
+    const { netArea } = levelSections(level, 'Y') // the same in either direction
     return {
       netArea,
       fx: (level.seismic.fxPsf / 1000) * netArea,

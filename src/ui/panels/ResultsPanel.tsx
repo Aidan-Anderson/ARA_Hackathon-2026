@@ -18,6 +18,7 @@ const GOVERNS_LABEL: Record<FpxResult['governs'], string> = {
 
 export function ResultsPanel({ project, results, levelId, caseId, setCaseId }: AppViewProps) {
   const level = currentLevel(project, levelId)
+  const outlineError = results.warnings.find((w) => w.code === 'outline-invalid' && w.levelId === level.id)
   return (
     <div className="results">
       <div className="case-switch">
@@ -31,7 +32,9 @@ export function ResultsPanel({ project, results, levelId, caseId, setCaseId }: A
           </button>
         ))}
       </div>
-      {caseId === 'ENV' ? (
+      {outlineError ? (
+        <p className="results-error">{outlineError.message}</p>
+      ) : caseId === 'ENV' ? (
         <p className="results-note">The Envelope view arrives with A3.2.</p>
       ) : (
         <LevelTables level={level} caseResult={results.cases[caseId]} />
@@ -148,13 +151,39 @@ function LevelTables({ level, caseResult }: { level: Level; caseResult: CaseResu
               {levelResult.spans.map((span) => (
                 <tr key={`${span.start}-${span.end}`}>
                   <td>
-                    {line(span.fromLineId)?.name ?? 'edge'}→{line(span.toLineId)?.name ?? 'edge'}
+                    {line(span.fromLineId)?.name ?? 'free end'}→{line(span.toLineId)?.name ?? 'free end'}
                   </td>
                   <td>{feet(span.end - span.start)}</td>
                   <td>{kips(span.maxShear)}</td>
                   <td>{plf(span.maxUnitShear)}</td>
                   <td>{`${span.maxMoment.toFixed(1)} k-ft`}</td>
                   <td>{kips(span.maxChord)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {levelResult.corners.length > 0 && (
+        <>
+          <h3>Re-entrant Corners (at F_px)</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Corner</th>
+                <th>s</th>
+                <th>Drag force M/d</th>
+              </tr>
+            </thead>
+            <tbody>
+              {levelResult.corners.map((corner) => (
+                <tr key={`${corner.point.x},${corner.point.y}`}>
+                  <td>
+                    ({corner.point.x}, {corner.point.y})
+                  </td>
+                  <td>{feet(corner.s)}</td>
+                  <td>{kips(corner.force)}</td>
                 </tr>
               ))}
             </tbody>

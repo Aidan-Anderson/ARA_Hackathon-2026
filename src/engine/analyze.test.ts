@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { t1, t2 } from '../model/fixtures'
+import { t1, t2, t3, t4, t6, t6b, t7 } from '../model/fixtures'
 import type { Project } from '../model/project'
 import type { LoadCaseId } from '../model/results'
 import { analyze } from './analyze'
@@ -175,6 +175,99 @@ describe('analyze: F_px, Diaphragm diagrams, Chords (A2.1)', () => {
       expect(v[v.length - 1]).toBeCloseTo(0, 9)
       expect(span.shear.s).toEqual(s)
     }
+  })
+})
+
+describe('analyze: L/T shapes, Re-entrant Corners, Openings, Overhangs (A2.2)', () => {
+  it('T3 L-shape: simple-beam reactions 13.125 / 9.375 (tributary area would give 15.0 / 7.5)', () => {
+    const lines = linesByName(t3(), 'SY')
+    expect(lines['1'].reactionFx).toBeCloseTo(13.125, 6)
+    expect(lines['3'].reactionFx).toBeCloseTo(9.375, 6)
+    expect(lines['1'].length).toBeCloseTo(50, 6)
+    expect(lines['3'].length).toBeCloseTo(25, 6)
+    expect(lines['3'].unitShearLeft).toBeCloseTo(375, 6)
+  })
+
+  it('T3 L-shape: max moment 172.27, Chord 6.75 on the narrow side, Re-entrant Corner 6.75 at (30, 25)', () => {
+    const level = analyze(t3()).cases.SY.levels[0]
+    const span = level.spans[0]
+    expect(level.spans).toHaveLength(1)
+    expect(span.maxMoment).toBeCloseTo(172.265625, 6)
+    expect(span.maxChord).toBeCloseTo(6.75, 6)
+    expect(span.maxUnitShear).toBeCloseTo(375, 6)
+    expect(level.corners).toEqual([{ s: 30, point: { x: 30, y: 25 }, force: expect.closeTo(6.75, 6) }])
+  })
+
+  it('T3 L-shape in X: the corner is found from the other side too', () => {
+    const level = analyze(t3()).cases.SX.levels[0]
+    expect(level.corners.map((corner) => corner.point)).toEqual([{ x: 30, y: 25 }])
+  })
+
+  it('T4 Opening: net area 4900, reactions 24.15 / 24.85', () => {
+    const level = analyze(t4()).cases.SY.levels[0]
+    expect(level.netArea).toBeCloseTo(4900, 6)
+    expect(level.fx).toBeCloseTo(49.0, 6)
+    const lines = linesByName(t4(), 'SY')
+    expect(lines['1'].reactionFx).toBeCloseTo(24.15, 6)
+    expect(lines['2'].reactionFx).toBeCloseTo(24.85, 6)
+  })
+
+  it('T4 Opening: at s = 15, V 17.15 k, unit shear on net depth 428.75 plf, Chord on gross depth 6.145 k', () => {
+    const span = analyze(t4()).cases.SY.levels[0].spans[0]
+    const at = (diagram: { s: number[]; v: number[] }) => diagram.v[diagram.s.indexOf(15)]
+    expect(Math.abs(at(span.shear))).toBeCloseTo(17.15, 6)
+    expect(at(span.unitShear)).toBeCloseTo(428.75, 6)
+    expect(at(span.chord)).toBeCloseTo(6.145, 6)
+  })
+
+  it('T4 Opening: warns that chord forces around Openings are not calculated', () => {
+    expect(analyze(t4()).warnings.map((w) => w.code)).toContain('opening-chords')
+  })
+
+  it('T6 U outline: outline-invalid, and the Level has no results', () => {
+    const results = analyze(t6())
+    expect(results.warnings).toEqual([expect.objectContaining({ severity: 'error', code: 'outline-invalid', levelId: 'roof' })])
+    expect(results.cases.SY.levels[0].lines).toEqual([])
+    expect(results.cases.SY.levels[0].fx).toBe(0)
+  })
+
+  it('T6b one Y line: too-few-lines once (not per Load Case), and no SY spans', () => {
+    const results = analyze(t6b())
+    const tooFew = results.warnings.filter((w) => w.code === 'too-few-lines')
+    expect(tooFew).toHaveLength(1)
+    expect(tooFew[0].message).toMatch(/in Y/)
+    expect(results.cases.SY.levels[0].spans).toEqual([])
+    expect(results.cases.SX.levels[0].spans).toHaveLength(1) // X still works
+  })
+
+  it('T7 Overhang: reactions 22.5 / 27.5; cantilever M 25.0 and Chord 0.5; overhang-long', () => {
+    const project = t7()
+    const lines = linesByName(project, 'SY')
+    expect(lines['1'].reactionFx).toBeCloseTo(22.5, 6)
+    expect(lines['2'].reactionFx).toBeCloseTo(27.5, 6)
+
+    const results = analyze(project)
+    const overhang = results.cases.SY.levels[0].spans.find((span) => span.kind === 'overhang')!
+    expect(overhang.fromLineId).toBe('roof-2')
+    expect(overhang.toLineId).toBeNull()
+    expect(overhang.maxMoment).toBeCloseTo(25.0, 6)
+    expect(overhang.maxChord).toBeCloseTo(0.5, 6)
+    expect(results.warnings).toEqual([expect.objectContaining({ code: 'overhang-long', refId: 'roof-2' })])
+  })
+
+  it('reactions still add up to F_x with Openings and Overhangs', () => {
+    for (const project of [t3(), t4(), t7()]) {
+      for (const caseId of ['SX', 'SY'] as const) {
+        const level = analyze(project).cases[caseId].levels[0]
+        const sum = level.lines.reduce((total, line) => total + line.reactionFx, 0)
+        expect(sum).toBeCloseTo(level.fx, 6)
+      }
+    }
+  })
+
+  it('T1 and T2 raise no warnings', () => {
+    expect(analyze(t1()).warnings).toEqual([])
+    expect(analyze(t2()).warnings).toEqual([])
   })
 })
 
